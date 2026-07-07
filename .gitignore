@@ -1,0 +1,16 @@
+.env
+.env.*
+
+__pycache__/
+*.py[cod]
+*$py.class
+
+backend/app/**/__pycache__/
+backend/*.log
+
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/tsconfig.tsbuildinfo
+frontend/src/**/*.js
+frontend/src/**/*.js.map
