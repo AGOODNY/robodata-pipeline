@@ -1,17 +1,30 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { RouterLink, RouterView, useRoute } from 'vue-router'
 
+import { api } from './api/client'
+import type { DatasetListItem } from './api/types'
+
 const route = useRoute()
-const dataset = computed(() => route.params.dataset as string | undefined)
+const datasets = ref<DatasetListItem[]>([])
+const routeDataset = computed(() => route.params.dataset as string | undefined)
+const activeDataset = computed(() => routeDataset.value ?? datasets.value[0]?.name)
 
 const navItems = computed(() => {
-  if (!dataset.value) return []
+  if (!activeDataset.value) return []
   return [
-    { label: 'Overview', to: `/datasets/${dataset.value}/overview` },
-    { label: 'Episodes', to: `/datasets/${dataset.value}/episodes` },
-    { label: 'Validation', to: `/datasets/${dataset.value}/validation` },
+    { label: 'Overview', to: `/datasets/${activeDataset.value}/overview` },
+    { label: 'Episodes', to: `/datasets/${activeDataset.value}/episodes` },
+    { label: 'Validation', to: `/datasets/${activeDataset.value}/validation` },
   ]
+})
+
+onMounted(async () => {
+  try {
+    datasets.value = await api.datasets()
+  } catch {
+    datasets.value = []
+  }
 })
 </script>
 
@@ -31,6 +44,7 @@ const navItems = computed(() => {
         <RouterLink v-for="item in navItems" :key="item.to" :to="item.to">
           {{ item.label }}
         </RouterLink>
+        <span v-if="!navItems.length" class="nav-placeholder">Select a dataset to unlock views</span>
       </nav>
 
       <div class="future-section">
