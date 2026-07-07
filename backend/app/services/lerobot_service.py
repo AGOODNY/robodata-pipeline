@@ -25,10 +25,10 @@ class DatasetNotFoundError(FileNotFoundError):
 
 def _jsonable(value: Any) -> Any:
     if hasattr(value, "tolist"):
-        return value.tolist()
+        return _jsonable(value.tolist())
     if isinstance(value, dict):
         return {str(k): _jsonable(v) for k, v in value.items()}
-    if isinstance(value, list):
+    if isinstance(value, (list, tuple)):
         return [_jsonable(v) for v in value]
     if not isinstance(value, (list, dict, tuple)) and pd.isna(value):
         return None
