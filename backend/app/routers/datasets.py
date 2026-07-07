@@ -1,6 +1,4 @@
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import FileResponse
-
 from app.models.schemas import (
     DatasetListItem,
     DatasetSummary,
@@ -16,7 +14,6 @@ from app.services.lerobot_service import (
     get_summary,
     list_datasets,
     list_episodes,
-    media_file,
     validate_dataset,
 )
 
@@ -68,13 +65,5 @@ def dataset_episode_series(dataset_name: str, episode_index: int) -> EpisodeSeri
 def dataset_validation(dataset_name: str) -> list[ValidationIssue]:
     try:
         return validate_dataset(dataset_name)
-    except DatasetNotFoundError as error:
-        raise _not_found(error) from error
-
-
-@router.get("/media/{dataset_name}/{relative_path:path}")
-def dataset_media(dataset_name: str, relative_path: str) -> FileResponse:
-    try:
-        return FileResponse(media_file(dataset_name, relative_path))
     except DatasetNotFoundError as error:
         raise _not_found(error) from error
