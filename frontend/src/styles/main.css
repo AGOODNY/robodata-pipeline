@@ -11,6 +11,7 @@
 
 body {
   margin: 0;
+  overflow: hidden;
 }
 
 a {
@@ -37,7 +38,8 @@ button:disabled {
 .app-shell {
   display: grid;
   grid-template-columns: 260px minmax(0, 1fr);
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
 }
 
 .sidebar {
@@ -46,6 +48,8 @@ button:disabled {
   display: flex;
   flex-direction: column;
   gap: 28px;
+  height: 100vh;
+  overflow-y: auto;
   padding: 24px;
 }
 
@@ -89,6 +93,16 @@ button:disabled {
   border-radius: 6px;
   color: #dfe8df;
   padding: 10px 12px;
+  transition:
+    background-color 150ms ease,
+    color 150ms ease,
+    transform 150ms ease;
+}
+
+.nav-section a:hover {
+  background: #263a31;
+  color: #ffffff;
+  transform: translateX(2px);
 }
 
 .nav-section a.router-link-active {
@@ -109,7 +123,9 @@ button:disabled {
 }
 
 .main-panel {
+  height: 100vh;
   min-width: 0;
+  overflow-y: auto;
   padding: 28px;
 }
 
@@ -338,8 +354,21 @@ video {
 }
 
 @media (max-width: 980px) {
+  body {
+    overflow: auto;
+  }
+
   .app-shell {
     grid-template-columns: 1fr;
+    height: auto;
+    min-height: 100vh;
+    overflow: visible;
+  }
+
+  .sidebar,
+  .main-panel {
+    height: auto;
+    overflow: visible;
   }
 
   .two-columns,
