@@ -1,10 +1,16 @@
 import type {
+  CatalogDataset,
   DatasetListItem,
   DatasetSummary,
   EpisodeDetail,
   EpisodeListItem,
   EpisodeSeries,
-  ValidationIssue,
+  RawDatasetListItem,
+  RawDatasetSummary,
+  RawEpisodeDetail,
+  RawEpisodeListItem,
+  RawEpisodeSeries,
+  RawFrameList,
 } from './types'
 
 async function request<T>(path: string): Promise<T> {
@@ -17,6 +23,7 @@ async function request<T>(path: string): Promise<T> {
 }
 
 export const api = {
+  catalog: () => request<CatalogDataset[]>('/api/catalog/datasets'),
   datasets: () => request<DatasetListItem[]>('/api/datasets'),
   summary: (dataset: string) => request<DatasetSummary>(`/api/datasets/${dataset}/summary`),
   episodes: (dataset: string) => request<EpisodeListItem[]>(`/api/datasets/${dataset}/episodes`),
@@ -24,5 +31,16 @@ export const api = {
     request<EpisodeDetail>(`/api/datasets/${dataset}/episodes/${episode}`),
   series: (dataset: string, episode: number) =>
     request<EpisodeSeries>(`/api/datasets/${dataset}/episodes/${episode}/series`),
-  validation: (dataset: string) => request<ValidationIssue[]>(`/api/datasets/${dataset}/validation`),
+  rawDatasets: () => request<RawDatasetListItem[]>('/api/raw/datasets'),
+  rawSummary: (dataset: string) => request<RawDatasetSummary>(`/api/raw/datasets/${dataset}/summary`),
+  rawEpisodes: (dataset: string) =>
+    request<RawEpisodeListItem[]>(`/api/raw/datasets/${dataset}/episodes`),
+  rawEpisode: (dataset: string, episode: string) =>
+    request<RawEpisodeDetail>(`/api/raw/datasets/${dataset}/episodes/${episode}`),
+  rawFrames: (dataset: string, episode: string, camera: string) =>
+    request<RawFrameList>(
+      `/api/raw/datasets/${dataset}/episodes/${episode}/frames?camera=${encodeURIComponent(camera)}`,
+    ),
+  rawSeries: (dataset: string, episode: string) =>
+    request<RawEpisodeSeries>(`/api/raw/datasets/${dataset}/episodes/${episode}/series`),
 }

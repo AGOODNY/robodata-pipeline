@@ -9,6 +9,7 @@ import PageState from '../components/PageState.vue'
 
 const route = useRoute()
 const dataset = computed(() => route.params.dataset as string)
+const formatLabel = computed(() => (route.params.format === 'lerobot_v21' ? 'LeRobot 2.1' : 'LeRobot 3.0'))
 const summary = ref<DatasetSummary | null>(null)
 const loading = ref(true)
 const error = ref('')
@@ -36,7 +37,7 @@ const featureRows = computed(() =>
   <section class="page">
     <header class="page-header">
       <div>
-        <p class="eyebrow">Dataset Overview</p>
+        <p class="eyebrow">{{ formatLabel }} Overview</p>
         <h1>{{ dataset }}</h1>
       </div>
     </header>

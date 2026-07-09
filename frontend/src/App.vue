@@ -3,25 +3,27 @@ import { computed, onMounted, ref } from 'vue'
 import { RouterLink, RouterView, useRoute } from 'vue-router'
 
 import { api } from './api/client'
-import type { DatasetListItem } from './api/types'
+import type { CatalogDataset } from './api/types'
 
 const route = useRoute()
-const datasets = ref<DatasetListItem[]>([])
+const datasets = ref<CatalogDataset[]>([])
 const routeDataset = computed(() => route.params.dataset as string | undefined)
-const activeDataset = computed(() => routeDataset.value ?? datasets.value[0]?.name)
+const routeFormat = computed(() => (route.params.format as string | undefined) ?? (route.path.startsWith('/datasets/raw/') ? 'raw' : undefined))
+const activeDataset = computed(() =>
+  datasets.value.find((dataset) => dataset.name === routeDataset.value && dataset.format === routeFormat.value),
+)
 
 const navItems = computed(() => {
-  if (!activeDataset.value) return []
+  if (!routeDataset.value || !routeFormat.value) return []
   return [
-    { label: 'Overview', to: `/datasets/${activeDataset.value}/overview` },
-    { label: 'Episodes', to: `/datasets/${activeDataset.value}/episodes` },
-    { label: 'Validation', to: `/datasets/${activeDataset.value}/validation` },
+    { label: 'Overview', to: `/datasets/${routeFormat.value}/${routeDataset.value}/overview` },
+    { label: 'Episodes', to: `/datasets/${routeFormat.value}/${routeDataset.value}/episodes` },
   ]
 })
 
 onMounted(async () => {
   try {
-    datasets.value = await api.datasets()
+    datasets.value = await api.catalog()
   } catch {
     datasets.value = []
   }
@@ -41,6 +43,10 @@ onMounted(async () => {
 
       <nav class="nav-section">
         <RouterLink to="/">Datasets</RouterLink>
+        <div v-if="routeDataset && routeFormat" class="active-dataset">
+          <span>{{ activeDataset?.format_label ?? routeFormat }}</span>
+          <strong>{{ routeDataset }}</strong>
+        </div>
         <RouterLink v-for="item in navItems" :key="item.to" :to="item.to">
           {{ item.label }}
         </RouterLink>
@@ -49,7 +55,6 @@ onMounted(async () => {
 
       <div class="future-section">
         <span>Later Pipeline</span>
-        <button disabled>Raw Viewer</button>
         <button disabled>Converter</button>
         <button disabled>Subtask Labels</button>
         <button disabled>Training Export</button>

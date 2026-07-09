@@ -3,8 +3,11 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 from app.models.schemas import HealthResponse
+from app.routers.catalog import router as catalog_router
 from app.routers.datasets import router as datasets_router
 from app.routers.media import router as media_router
+from app.routers.raw import router as raw_router
+from app.routers.raw_media import router as raw_media_router
 
 
 app = FastAPI(title=settings.app_name)
@@ -17,8 +20,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(catalog_router, prefix=settings.api_prefix)
 app.include_router(datasets_router, prefix=settings.api_prefix)
+app.include_router(raw_router, prefix=settings.api_prefix)
 app.include_router(media_router)
+app.include_router(raw_media_router)
 
 
 @app.get("/api/health", response_model=HealthResponse)

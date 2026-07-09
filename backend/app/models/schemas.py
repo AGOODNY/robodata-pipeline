@@ -13,6 +13,20 @@ class DatasetListItem(BaseModel):
     fps: float | None = None
 
 
+DatasetFormat = Literal["lerobot_v21", "lerobot_v30", "raw"]
+
+
+class CatalogDataset(BaseModel):
+    name: str
+    path: str
+    format: DatasetFormat
+    format_label: str
+    robot_type: str | None = None
+    total_episodes: int | None = None
+    total_frames: int | None = None
+    fps: float | None = None
+
+
 class HealthResponse(BaseModel):
     status: str
     app: str
@@ -63,8 +77,73 @@ class EpisodeSeries(BaseModel):
     action_names: list[str]
 
 
-class ValidationIssue(BaseModel):
-    level: Literal["error", "warning", "info"]
-    code: str
-    message: str
-    path: str | None = None
+class RawDatasetListItem(BaseModel):
+    name: str
+    path: str
+    total_episodes: int
+    format: str = "Pika raw"
+
+
+class RawCameraStream(BaseModel):
+    key: str
+    relative_path: str
+    frame_count: int
+    fps: float | None = None
+    from_timestamp: float | None = None
+    to_timestamp: float | None = None
+
+
+class RawEpisodeListItem(BaseModel):
+    name: str
+    path: str
+    frame_count: int
+    duration_seconds: float | None = None
+    has_gripper_trigger_stop: bool
+    cameras: list[RawCameraStream]
+
+
+class RawEpisodeDetail(RawEpisodeListItem):
+    format: str = "Pika raw"
+    statistic: dict[str, Any]
+    trigger_stop: dict[str, Any] | None = None
+
+
+class RawDatasetSummary(BaseModel):
+    name: str
+    path: str
+    format: str = "Pika raw"
+    total_episodes: int
+    total_frames: int
+    total_seconds: float | None = None
+    trigger_stop_episodes: int
+    cameras: list[RawCameraStream]
+
+
+class RawFrame(BaseModel):
+    index: int
+    timestamp: float
+    relative_path: str
+    url: str
+
+
+class RawFrameList(BaseModel):
+    camera: str
+    frames: list[RawFrame]
+
+
+class RawSeriesLine(BaseModel):
+    key: str
+    label: str
+    timestamps: list[float]
+    values: list[float | None]
+
+
+class RawSeriesGroup(BaseModel):
+    key: str
+    label: str
+    lines: list[RawSeriesLine]
+
+
+class RawEpisodeSeries(BaseModel):
+    episode_name: str
+    groups: list[RawSeriesGroup]

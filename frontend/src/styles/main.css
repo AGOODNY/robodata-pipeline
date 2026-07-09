@@ -116,6 +116,28 @@ button:disabled {
   padding: 10px 12px;
 }
 
+.active-dataset {
+  border: 1px solid #34453d;
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 12px;
+}
+
+.active-dataset span {
+  color: #aebbb2;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.active-dataset strong {
+  color: #ffffff;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
 .future-section button {
   background: transparent;
   border: 1px solid #34453d;
@@ -161,6 +183,35 @@ button:disabled {
   display: grid;
   gap: 16px;
   grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+}
+
+.dataset-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.dataset-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.dataset-section header {
+  align-items: end;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.dataset-section h2 {
+  font-size: 20px;
+  margin: 0;
+}
+
+.dataset-section header span {
+  color: #607268;
+  font-size: 13px;
 }
 
 .dataset-card,
@@ -286,6 +337,16 @@ th {
   padding: 20px;
 }
 
+.compact-state {
+  min-height: 92px;
+}
+
+.path-text {
+  color: #607268;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
 .page-state-error {
   border-color: #e7b7b7;
   color: #9d2c2c;
@@ -314,6 +375,40 @@ video {
   border-radius: 8px;
   max-height: 70vh;
   object-fit: contain;
+  width: 100%;
+}
+
+.raw-player-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.raw-frame-stage {
+  align-items: center;
+  aspect-ratio: 16 / 9;
+  background: #0c100e;
+  border-radius: 8px;
+  display: flex;
+  justify-content: center;
+  overflow: hidden;
+  width: 100%;
+}
+
+.raw-frame-stage img {
+  height: 100%;
+  object-fit: contain;
+  width: 100%;
+}
+
+.raw-controls {
+  align-items: center;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: auto auto auto minmax(160px, 1fr) auto;
+}
+
+.raw-controls input {
   width: 100%;
 }
 

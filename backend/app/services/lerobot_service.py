@@ -14,7 +14,6 @@ from app.models.schemas import (
     EpisodeDetail,
     EpisodeListItem,
     EpisodeSeries,
-    ValidationIssue,
     VideoAsset,
 )
 
@@ -38,6 +37,11 @@ def _jsonable(value: Any) -> Any:
 def _read_json(path: Path) -> dict[str, Any]:
     with path.open("r", encoding="utf-8") as file:
         return json.load(file)
+
+
+def _read_jsonl(path: Path) -> list[dict[str, Any]]:
+    with path.open("r", encoding="utf-8") as file:
+        return [json.loads(line) for line in file if line.strip()]
 
 
 def _read_parquet(path: Path) -> pd.DataFrame:
@@ -68,6 +72,10 @@ def get_dataset_path(dataset_name: str) -> Path:
     return candidate
 
 
+def _is_v21_info(info: dict[str, Any]) -> bool:
+    return "2.1" in str(info.get("codebase_version", "")).lower()
+
+
 @lru_cache(maxsize=16)
 def load_info(dataset_name: str) -> dict[str, Any]:
     return _read_json(get_dataset_path(dataset_name) / "meta" / "info.json")
@@ -81,7 +89,12 @@ def load_stats(dataset_name: str) -> dict[str, Any]:
 
 @lru_cache(maxsize=16)
 def load_tasks(dataset_name: str) -> list[dict[str, Any]]:
-    path = get_dataset_path(dataset_name) / "meta" / "tasks.parquet"
+    dataset = get_dataset_path(dataset_name)
+    info = load_info(dataset_name)
+    if _is_v21_info(info):
+        path = dataset / "meta" / "tasks.jsonl"
+        return [_jsonable(row) for row in _read_jsonl(path)] if path.exists() else []
+    path = dataset / "meta" / "tasks.parquet"
     if not path.exists():
         return []
     df = _read_parquet(path).reset_index()
@@ -91,6 +104,10 @@ def load_tasks(dataset_name: str) -> list[dict[str, Any]]:
 @lru_cache(maxsize=16)
 def load_episodes_df(dataset_name: str) -> pd.DataFrame:
     dataset = get_dataset_path(dataset_name)
+    info = load_info(dataset_name)
+    if _is_v21_info(info):
+        path = dataset / "meta" / "episodes.jsonl"
+        return pd.DataFrame(_read_jsonl(path)) if path.exists() else pd.DataFrame()
     files = _chunk_file_path(dataset, "meta/episodes/chunk-*/file-*.parquet")
     if not files:
         return pd.DataFrame()
@@ -100,10 +117,24 @@ def load_episodes_df(dataset_name: str) -> pd.DataFrame:
 @lru_cache(maxsize=8)
 def load_data_df(dataset_name: str) -> pd.DataFrame:
     dataset = get_dataset_path(dataset_name)
-    files = _chunk_file_path(dataset, "data/chunk-*/file-*.parquet")
+    info = load_info(dataset_name)
+    pattern = "data/chunk-*/episode_*.parquet" if _is_v21_info(info) else "data/chunk-*/file-*.parquet"
+    files = _chunk_file_path(dataset, pattern)
     if not files:
         return pd.DataFrame()
     return pd.concat([_read_parquet(path) for path in files], ignore_index=True)
+
+
+@lru_cache(maxsize=16)
+def load_episode_stats(dataset_name: str) -> dict[int, dict[str, Any]]:
+    dataset = get_dataset_path(dataset_name)
+    info = load_info(dataset_name)
+    if not _is_v21_info(info):
+        return {}
+    path = dataset / "meta" / "episodes_stats.jsonl"
+    if not path.exists():
+        return {}
+    return {int(row["episode_index"]): _jsonable(row.get("stats", {})) for row in _read_jsonl(path)}
 
 
 def list_datasets() -> list[DatasetListItem]:
@@ -152,7 +183,28 @@ def _optional_float(value: Any) -> float | None:
 
 def _video_assets(dataset_name: str, row: pd.Series) -> list[VideoAsset]:
     dataset = get_dataset_path(dataset_name)
+    info = load_info(dataset_name)
     assets: list[VideoAsset] = []
+    if _is_v21_info(info):
+        episode_index = int(row["episode_index"])
+        chunk_size = int(info.get("chunks_size") or 1000)
+        episode_chunk = episode_index // chunk_size
+        video_features = [
+            key for key, feature in info.get("features", {}).items() if feature.get("dtype") == "video"
+        ]
+        for key in sorted(video_features):
+            relative = f"videos/chunk-{episode_chunk:03d}/{key}/episode_{episode_index:06d}.mp4"
+            path = dataset / relative
+            assets.append(
+                VideoAsset(
+                    key=key,
+                    relative_path=relative,
+                    url=f"/media/{dataset_name}/{relative}",
+                    exists=path.exists(),
+                )
+            )
+        return assets
+
     prefix = "videos/"
     keys = sorted(
         {
@@ -207,11 +259,13 @@ def get_episode(dataset_name: str, episode_index: int) -> EpisodeDetail:
         raise DatasetNotFoundError(f"{dataset_name}/episode/{episode_index}")
     row = match.iloc[0]
     item = _episode_item(dataset_name, row)
-    stats = {
-        column.removeprefix("stats/"): _jsonable(row[column])
-        for column in row.index
-        if column.startswith("stats/")
-    }
+    stats = load_episode_stats(dataset_name).get(episode_index)
+    if stats is None:
+        stats = {
+            column.removeprefix("stats/"): _jsonable(row[column])
+            for column in row.index
+            if column.startswith("stats/")
+        }
     return EpisodeDetail(**item.model_dump(), stats=stats)
 
 
@@ -239,75 +293,6 @@ def get_episode_series(dataset_name: str, episode_index: int) -> EpisodeSeries:
         state_names=state_feature.get("names") or [],
         action_names=action_feature.get("names") or [],
     )
-
-
-def validate_dataset(dataset_name: str) -> list[ValidationIssue]:
-    dataset = get_dataset_path(dataset_name)
-    issues: list[ValidationIssue] = []
-    info_path = dataset / "meta" / "info.json"
-    stats_path = dataset / "meta" / "stats.json"
-    tasks_path = dataset / "meta" / "tasks.parquet"
-    data_files = _chunk_file_path(dataset, "data/chunk-*/file-*.parquet")
-    episode_files = _chunk_file_path(dataset, "meta/episodes/chunk-*/file-*.parquet")
-
-    for path, code in [
-        (info_path, "missing_info"),
-        (stats_path, "missing_stats"),
-        (tasks_path, "missing_tasks"),
-    ]:
-        if not path.exists():
-            issues.append(ValidationIssue(level="error", code=code, message=f"Missing {path.name}", path=str(path)))
-
-    if not data_files:
-        issues.append(ValidationIssue(level="error", code="missing_data_parquet", message="No data parquet files found", path="data/"))
-    if not episode_files:
-        issues.append(ValidationIssue(level="error", code="missing_episode_parquet", message="No episode parquet files found", path="meta/episodes/"))
-
-    if any(issue.level == "error" and issue.code == "missing_info" for issue in issues):
-        return issues
-
-    info = load_info(dataset_name)
-    episodes = load_episodes_df(dataset_name)
-    data = load_data_df(dataset_name)
-
-    if not episodes.empty and "episode_index" in episodes.columns:
-        indexes = sorted(int(value) for value in episodes["episode_index"].tolist())
-        expected = list(range(len(indexes)))
-        if indexes != expected:
-            issues.append(ValidationIssue(level="warning", code="episode_index_gap", message="Episode indexes are not contiguous from 0", path="meta/episodes/"))
-
-    expected_episodes = info.get("total_episodes")
-    if expected_episodes is not None and not episodes.empty and int(expected_episodes) != len(episodes):
-        issues.append(ValidationIssue(level="error", code="episode_count_mismatch", message=f"info.json reports {expected_episodes} episodes, parquet has {len(episodes)}", path="meta/info.json"))
-
-    expected_frames = info.get("total_frames")
-    if expected_frames is not None and not data.empty and int(expected_frames) != len(data):
-        issues.append(ValidationIssue(level="error", code="frame_count_mismatch", message=f"info.json reports {expected_frames} frames, data parquet has {len(data)}", path="meta/info.json"))
-
-    required_columns = {"observation.state", "action", "timestamp", "frame_index", "episode_index", "index", "task_index"}
-    missing_columns = required_columns - set(data.columns)
-    for column in sorted(missing_columns):
-        issues.append(ValidationIssue(level="error", code="missing_data_column", message=f"Missing data column: {column}", path="data/"))
-
-    video_features = [
-        key for key, feature in info.get("features", {}).items() if feature.get("dtype") == "video"
-    ]
-    for feature in video_features:
-        feature_dir = dataset / "videos" / feature
-        files = list(feature_dir.glob("chunk-*/file-*.mp4")) if feature_dir.exists() else []
-        if not files:
-            issues.append(ValidationIssue(level="warning", code="missing_video_files", message=f"No mp4 files found for {feature}", path=str(feature_dir)))
-
-    for episode in list_episodes(dataset_name):
-        for video in episode.videos:
-            if not video.exists:
-                issues.append(ValidationIssue(level="warning", code="missing_episode_video", message=f"Episode {episode.episode_index} references missing video {video.relative_path}", path=video.relative_path))
-
-    if not issues:
-        issues.append(ValidationIssue(level="info", code="dataset_ok", message="Dataset passed first-stage validation.", path=str(dataset)))
-    else:
-        issues.insert(0, ValidationIssue(level="info", code="validation_complete", message=f"Validation completed with {len(issues)} finding(s).", path=str(dataset)))
-    return issues
 
 
 def media_file(dataset_name: str, relative_path: str) -> Path:

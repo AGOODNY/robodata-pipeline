@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import * as echarts from 'echarts'
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { RouterLink, useRoute } from 'vue-router'
 
 import { api } from '../api/client'
 import type { EpisodeSeries } from '../api/types'
@@ -9,6 +9,7 @@ import PageState from '../components/PageState.vue'
 
 const route = useRoute()
 const dataset = computed(() => route.params.dataset as string)
+const format = computed(() => route.params.format as string)
 const episodeIndex = computed(() => Number(route.params.episode))
 const series = ref<EpisodeSeries | null>(null)
 const loading = ref(true)
@@ -74,6 +75,7 @@ onUnmounted(() => {
         <p class="eyebrow">State / Action Curves</p>
         <h1>{{ dataset }} / #{{ episodeIndex }}</h1>
       </div>
+      <RouterLink class="button" :to="`/datasets/${format}/${dataset}/episodes/${episodeIndex}`">Player</RouterLink>
     </header>
 
     <PageState :loading="loading" :error="error" />

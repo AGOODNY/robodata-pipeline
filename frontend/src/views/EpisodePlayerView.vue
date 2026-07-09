@@ -9,6 +9,7 @@ import PageState from '../components/PageState.vue'
 
 const route = useRoute()
 const dataset = computed(() => route.params.dataset as string)
+const format = computed(() => route.params.format as string)
 const episodeIndex = computed(() => Number(route.params.episode))
 const episode = ref<EpisodeDetail | null>(null)
 const loading = ref(true)
@@ -34,7 +35,7 @@ onMounted(async () => {
         <p class="eyebrow">Episode Player</p>
         <h1>{{ dataset }} / #{{ episodeIndex }}</h1>
       </div>
-      <RouterLink class="button" :to="`/datasets/${dataset}/episodes/${episodeIndex}/series`">Open Curves</RouterLink>
+      <RouterLink class="button" :to="`/datasets/${format}/${dataset}/episodes/${episodeIndex}/series`">Open Curves</RouterLink>
     </header>
 
     <PageState :loading="loading" :error="error" />

@@ -8,6 +8,8 @@ import PageState from '../components/PageState.vue'
 
 const route = useRoute()
 const dataset = computed(() => route.params.dataset as string)
+const format = computed(() => route.params.format as string)
+const formatLabel = computed(() => (format.value === 'lerobot_v21' ? 'LeRobot 2.1' : 'LeRobot 3.0'))
 const episodes = ref<EpisodeListItem[]>([])
 const loading = ref(true)
 const error = ref('')
@@ -27,7 +29,7 @@ onMounted(async () => {
   <section class="page">
     <header class="page-header">
       <div>
-        <p class="eyebrow">Episode Index</p>
+        <p class="eyebrow">{{ formatLabel }} Episodes</p>
         <h1>{{ dataset }}</h1>
       </div>
     </header>
@@ -63,8 +65,8 @@ onMounted(async () => {
               </span>
             </td>
             <td class="table-actions">
-              <RouterLink :to="`/datasets/${dataset}/episodes/${episode.episode_index}`">Player</RouterLink>
-              <RouterLink :to="`/datasets/${dataset}/episodes/${episode.episode_index}/series`">Series</RouterLink>
+              <RouterLink :to="`/datasets/${format}/${dataset}/episodes/${episode.episode_index}`">Player</RouterLink>
+              <RouterLink :to="`/datasets/${format}/${dataset}/episodes/${episode.episode_index}/series`">Series</RouterLink>
             </td>
           </tr>
         </tbody>
