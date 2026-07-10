@@ -4,3 +4,4 @@ pandas==2.2.3
 pyarrow==18.1.0
 pydantic==2.10.4
 orjson==3.10.12
+h5py==3.12.1

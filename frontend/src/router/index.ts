@@ -4,7 +4,6 @@ import DatasetSelectView from '../views/DatasetSelectView.vue'
 import DatasetOverviewView from '../views/DatasetOverviewView.vue'
 import EpisodesView from '../views/EpisodesView.vue'
 import EpisodePlayerView from '../views/EpisodePlayerView.vue'
-import SeriesView from '../views/SeriesView.vue'
 import RawDatasetOverviewView from '../views/RawDatasetOverviewView.vue'
 import RawEpisodesView from '../views/RawEpisodesView.vue'
 import RawEpisodePlayerView from '../views/RawEpisodePlayerView.vue'
@@ -19,6 +18,5 @@ export const router = createRouter({
     { path: '/datasets/:format/:dataset/overview', name: 'overview', component: DatasetOverviewView },
     { path: '/datasets/:format/:dataset/episodes', name: 'episodes', component: EpisodesView },
     { path: '/datasets/:format/:dataset/episodes/:episode', name: 'player', component: EpisodePlayerView },
-    { path: '/datasets/:format/:dataset/episodes/:episode/series', name: 'series', component: SeriesView },
   ],
 })

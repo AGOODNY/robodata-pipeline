@@ -66,7 +66,6 @@ onMounted(async () => {
             </td>
             <td class="table-actions">
               <RouterLink :to="`/datasets/${format}/${dataset}/episodes/${episode.episode_index}`">Player</RouterLink>
-              <RouterLink :to="`/datasets/${format}/${dataset}/episodes/${episode.episode_index}/series`">Series</RouterLink>
             </td>
           </tr>
         </tbody>

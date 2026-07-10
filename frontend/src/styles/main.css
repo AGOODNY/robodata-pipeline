@@ -412,6 +412,36 @@ video {
   width: 100%;
 }
 
+.raw-controls .play-control,
+.raw-controls .frame-control {
+  align-items: center;
+  display: inline-flex;
+  gap: 7px;
+  justify-content: center;
+  min-height: 38px;
+}
+
+.raw-controls .play-control {
+  background: #17211d;
+  border-color: #17211d;
+  color: #ffffff;
+  font-weight: 700;
+  min-width: 92px;
+}
+
+.raw-controls .frame-control {
+  background: #f4f7f4;
+  min-width: 78px;
+}
+
+.raw-controls .play-control:hover:not(:disabled) {
+  background: #2b3a32;
+}
+
+.raw-controls .frame-control:hover:not(:disabled) {
+  background: #e3eae4;
+}
+
 .chart-panel {
   min-height: 620px;
 }

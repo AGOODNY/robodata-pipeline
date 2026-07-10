@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+import h5py
+
 from app.core.config import settings
 from app.models.schemas import (
     RawCameraStream,
@@ -52,6 +54,12 @@ SERIES_TOPICS = {
     },
 }
 
+HDF5_SERIES_PATHS = {
+    "joint_position": "arm/jointStatePosition/armJointState",
+    "actual_tcp": "arm/endPose/armEndPose",
+    "target_tcp": "arm/endPose/armTargetPose",
+}
+
 
 def _raw_root() -> Path:
     return (settings.data_root / "raw").resolve()
@@ -78,6 +86,13 @@ def _read_json(path: Path) -> dict[str, Any]:
     return _jsonable(value) if isinstance(value, dict) else {}
 
 
+def _optional_float(value: Any) -> float | None:
+    try:
+        return float(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
 def _timestamp(path: Path) -> float | None:
     try:
         return float(path.stem)
@@ -90,6 +105,17 @@ def _timestamp_files(path: Path, pattern: str) -> list[Path]:
         return []
     files = [file for file in path.glob(pattern) if _timestamp(file) is not None]
     return sorted(files, key=lambda file: _timestamp(file) or 0.0)
+
+
+def _readable_timestamp_files(path: Path, pattern: str) -> list[Path]:
+    files: list[Path] = []
+    for file in _timestamp_files(path, pattern):
+        try:
+            if file.stat().st_size > 0:
+                files.append(file)
+        except OSError:
+            continue
+    return files
 
 
 def _duration_from_timestamps(files: list[Path]) -> float | None:
@@ -133,7 +159,7 @@ def _parse_statistic(path: Path) -> dict[str, Any]:
 
 
 def _camera_stream(episode: Path, key: str, relative: Path, statistic: dict[str, Any]) -> RawCameraStream:
-    files = _timestamp_files(episode / relative, "*.jpg")
+    files = _readable_timestamp_files(episode / relative, "*.jpg")
     topic = relative.as_posix()
     topic_stats = statistic.get("topics", {}).get(topic, {})
     return RawCameraStream(
@@ -255,7 +281,7 @@ def get_raw_frames(raw_name: str, episode_name: str, camera: str) -> RawFrameLis
     if relative is None:
         raise RawDatasetNotFoundError(camera)
     frames: list[RawFrame] = []
-    for index, file in enumerate(_timestamp_files(episode / relative, "*.jpg")):
+    for index, file in enumerate(_readable_timestamp_files(episode / relative, "*.jpg")):
         relative_path = file.relative_to(episode).as_posix()
         frames.append(
             RawFrame(
@@ -276,22 +302,89 @@ def _series_group(episode: Path, key: str, config: dict[str, Any]) -> RawSeriesG
         timestamp = _timestamp(file)
         if timestamp is None:
             continue
-        data = _read_json(file)
+        try:
+            data = _read_json(file)
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            continue
+        if not data:
+            continue
         timestamps.append(timestamp)
         array_key = config.get("array_key")
         if array_key:
             values = data.get(array_key) or []
             for index, field in enumerate(config["fields"]):
-                values_by_field[field].append(float(values[index]) if index < len(values) else None)
+                values_by_field[field].append(_optional_float(values[index]) if index < len(values) else None)
         else:
             for field in config["fields"]:
-                value = data.get(field)
-                values_by_field[field].append(float(value) if value is not None else None)
+                values_by_field[field].append(_optional_float(data.get(field)))
     lines = [
         RawSeriesLine(key=f"{key}.{field}", label=field, timestamps=timestamps, values=values)
         for field, values in values_by_field.items()
     ]
+    if not timestamps:
+        return _hdf5_series_group(episode, key, config)
     return RawSeriesGroup(key=key, label=config["label"], lines=lines)
+
+
+def _hdf5_timestamps(file: h5py.File, count: int) -> list[float]:
+    if count <= 0 or "timestamp" not in file:
+        return []
+    source = file["timestamp"]
+    if len(source) == 0:
+        return []
+    start = _optional_float(source[0])
+    end = _optional_float(source[-1])
+    if start is None or end is None:
+        return []
+    if count == 1:
+        return [start]
+    step = (end - start) / (count - 1)
+    return [start + step * index for index in range(count)]
+
+
+def _hdf5_series_group(episode: Path, key: str, config: dict[str, Any]) -> RawSeriesGroup:
+    empty = RawSeriesGroup(
+        key=key,
+        label=config["label"],
+        lines=[RawSeriesLine(key=f"{key}.{field}", label=field, timestamps=[], values=[]) for field in config["fields"]],
+    )
+    path = episode / "data.hdf5"
+    if not path.exists():
+        return empty
+    try:
+        with h5py.File(path, "r") as file:
+            if key == "gripper":
+                angle_path = "gripper/encoderAngle/pikaGripper"
+                distance_path = "gripper/encoderDistance/pikaGripper"
+                if angle_path not in file or distance_path not in file:
+                    return empty
+                count = min(len(file[angle_path]), len(file[distance_path]))
+                rows = [(file[angle_path][index], file[distance_path][index]) for index in range(count)]
+            else:
+                dataset_path = HDF5_SERIES_PATHS.get(key)
+                if dataset_path is None or dataset_path not in file:
+                    return empty
+                source = file[dataset_path]
+                count = len(source)
+                rows = [source[index] for index in range(count)]
+            timestamps = _hdf5_timestamps(file, count)
+    except (OSError, ValueError):
+        return empty
+
+    if not timestamps:
+        return empty
+    values_by_field = {field: [] for field in config["fields"]}
+    for row in rows:
+        for index, field in enumerate(config["fields"]):
+            values_by_field[field].append(_optional_float(row[index]) if index < len(row) else None)
+    return RawSeriesGroup(
+        key=key,
+        label=config["label"],
+        lines=[
+            RawSeriesLine(key=f"{key}.{field}", label=field, timestamps=timestamps, values=values)
+            for field, values in values_by_field.items()
+        ],
+    )
 
 
 def get_raw_series(raw_name: str, episode_name: str) -> RawEpisodeSeries:

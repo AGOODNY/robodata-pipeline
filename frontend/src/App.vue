@@ -21,6 +21,11 @@ const navItems = computed(() => {
   ]
 })
 
+const isEpisodesActive = computed(() => {
+  if (!routeDataset.value || !routeFormat.value) return false
+  return route.path.startsWith(`/datasets/${routeFormat.value}/${routeDataset.value}/episodes`)
+})
+
 onMounted(async () => {
   try {
     datasets.value = await api.catalog()
@@ -47,7 +52,12 @@ onMounted(async () => {
           <span>{{ activeDataset?.format_label ?? routeFormat }}</span>
           <strong>{{ routeDataset }}</strong>
         </div>
-        <RouterLink v-for="item in navItems" :key="item.to" :to="item.to">
+        <RouterLink
+          v-for="item in navItems"
+          :key="item.to"
+          :to="item.to"
+          :class="{ 'router-link-active': item.label === 'Episodes' && isEpisodesActive }"
+        >
           {{ item.label }}
         </RouterLink>
         <span v-if="!navItems.length" class="nav-placeholder">Select a dataset to unlock views</span>
@@ -56,8 +66,6 @@ onMounted(async () => {
       <div class="future-section">
         <span>Later Pipeline</span>
         <button disabled>Converter</button>
-        <button disabled>Subtask Labels</button>
-        <button disabled>Training Export</button>
       </div>
     </aside>
 

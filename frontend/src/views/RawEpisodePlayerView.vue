@@ -44,11 +44,17 @@ async function loadFrames() {
 }
 
 function previousFrame() {
+  playing.value = false
   currentIndex.value = Math.max(0, currentIndex.value - 1)
 }
 
-function nextFrame() {
+function advanceFrame() {
   currentIndex.value = Math.min(Math.max(frames.value.length - 1, 0), currentIndex.value + 1)
+}
+
+function nextFrame() {
+  playing.value = false
+  advanceFrame()
 }
 
 function stopTimer() {
@@ -64,13 +70,23 @@ function startTimer() {
       playing.value = false
       return
     }
-    nextFrame()
+    advanceFrame()
   }, interval)
 }
 
 function lineData(line: { timestamps: number[]; values: Array<number | null> }) {
   const base = line.timestamps[0] ?? 0
   return line.timestamps.map((timestamp, index) => [timestamp - base, line.values[index]])
+}
+
+function progressMarkLine() {
+  return {
+    symbol: 'none',
+    silent: true,
+    lineStyle: { color: '#7e8781', type: 'dashed', width: 1.5 },
+    label: { show: false },
+    data: [{ xAxis: currentSeconds.value }],
+  }
 }
 
 function renderChart() {
@@ -88,13 +104,14 @@ function renderChart() {
       })),
   )
   chart.setOption({
+    animation: false,
     tooltip: { trigger: 'axis' },
     legend: { type: 'scroll', top: 0 },
     grid: { left: 52, right: 24, top: 72, bottom: 48 },
     xAxis: { type: 'value', name: 'time (s)' },
     yAxis: { type: 'value', scale: true },
     dataZoom: [{ type: 'inside' }, { type: 'slider', height: 24 }],
-    series: chartSeries,
+    series: chartSeries.map((item, index) => (index === 0 ? { ...item, markLine: progressMarkLine() } : item)),
   })
   updateMarker()
 }
@@ -102,15 +119,25 @@ function renderChart() {
 function updateMarker() {
   if (!chart) return
   chart.setOption({
-    xAxis: {
-      axisPointer: {
-        show: true,
-        value: currentSeconds.value,
-        snap: false,
-        lineStyle: { color: '#17211d', width: 1 },
-      },
-    },
+    animation: false,
+    series: [{ markLine: progressMarkLine() }],
   })
+  if (!playing.value) window.requestAnimationFrame(showCurrentFrameTooltip)
+}
+
+function showCurrentFrameTooltip() {
+  if (!chart || !chartEl.value || playing.value || !currentFrame.value) return
+  const x = chart.convertToPixel({ xAxisIndex: 0 }, currentSeconds.value)
+  if (typeof x !== 'number') return
+  chart.dispatchAction({
+    type: 'showTip',
+    x,
+    y: Math.max(80, chartEl.value.clientHeight / 2),
+  })
+}
+
+function hideCurrentFrameTooltip() {
+  chart?.dispatchAction({ type: 'hideTip' })
 }
 
 function resizeChart() {
@@ -118,8 +145,13 @@ function resizeChart() {
 }
 
 watch(playing, (value) => {
-  if (value) startTimer()
-  else stopTimer()
+  if (value) {
+    hideCurrentFrameTooltip()
+    startTimer()
+  } else {
+    stopTimer()
+    updateMarker()
+  }
 })
 
 watch(currentIndex, updateMarker)
@@ -192,13 +224,41 @@ onUnmounted(() => {
 
         <div class="raw-frame-stage">
           <img v-if="currentFrame" :src="currentFrame.url" :alt="`${selectedCamera} frame ${currentIndex + 1}`" />
-          <div v-else class="page-state">No RGB frames for this camera.</div>
+          <div v-else class="page-state">No readable RGB frames. The stored JPG files for this camera are empty.</div>
         </div>
 
         <div class="raw-controls">
-          <button @click="playing = !playing" :disabled="!frames.length">{{ playing ? 'Pause' : 'Play' }}</button>
-          <button @click="previousFrame" :disabled="!frames.length || currentIndex === 0">Prev</button>
-          <button @click="nextFrame" :disabled="!frames.length || currentIndex >= frames.length - 1">Next</button>
+          <button
+            class="play-control"
+            :aria-label="playing ? 'Pause playback' : 'Play frames'"
+            :title="playing ? 'Pause playback' : 'Play frames'"
+            @click="playing = !playing"
+            :disabled="!frames.length"
+          >
+            <span v-if="playing" aria-hidden="true">&#10074;&#10074;</span>
+            <span v-else aria-hidden="true">&#9654;</span>
+            {{ playing ? 'Pause' : 'Play' }}
+          </button>
+          <button
+            class="frame-control"
+            aria-label="Previous frame"
+            title="Previous frame"
+            @click="previousFrame"
+            :disabled="!frames.length || currentIndex === 0"
+          >
+            <span aria-hidden="true">&#9664;</span>
+            Prev
+          </button>
+          <button
+            class="frame-control"
+            aria-label="Next frame"
+            title="Next frame"
+            @click="nextFrame"
+            :disabled="!frames.length || currentIndex >= frames.length - 1"
+          >
+            Next
+            <span aria-hidden="true">&#9654;</span>
+          </button>
           <input
             v-model.number="currentIndex"
             type="range"
