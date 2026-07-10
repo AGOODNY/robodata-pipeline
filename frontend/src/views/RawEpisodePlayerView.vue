@@ -170,8 +170,11 @@ onMounted(async () => {
   try {
     episode.value = await api.rawEpisode(dataset.value, episodeName.value)
     selectedCamera.value = episode.value.cameras.find((camera) => camera.frame_count > 0)?.key ?? selectedCamera.value
-    await loadFrames()
-    series.value = await api.rawSeries(dataset.value, episodeName.value)
+    const [, seriesResponse] = await Promise.all([
+      loadFrames(),
+      api.rawSeries(dataset.value, episodeName.value),
+    ])
+    series.value = seriesResponse
     await nextTick()
     renderChart()
     window.addEventListener('resize', resizeChart)

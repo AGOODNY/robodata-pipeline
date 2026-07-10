@@ -116,26 +116,87 @@ button:disabled {
   padding: 10px 12px;
 }
 
-.active-dataset {
-  border: 1px solid #34453d;
+.visualization-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.dataset-menu {
+  border: 1px solid #3d5b50;
   border-radius: 6px;
+  margin-left: 14px;
+  overflow: hidden;
+  position: relative;
+}
+
+.dataset-menu::before {
+  border-left: 1px solid #607a6d;
+  content: '';
+  height: 18px;
+  left: -15px;
+  position: absolute;
+  top: -10px;
+}
+
+.dataset-menu::after {
+  border-top: 1px solid #607a6d;
+  content: '';
+  left: -15px;
+  position: absolute;
+  top: 8px;
+  width: 14px;
+}
+
+.dataset-menu summary {
+  background: #1b342d;
+  cursor: pointer;
   display: flex;
   flex-direction: column;
   gap: 3px;
-  padding: 10px 12px;
+  list-style: none;
+  padding: 10px 28px 10px 12px;
+  position: relative;
 }
 
-.active-dataset span {
+.dataset-menu summary::-webkit-details-marker {
+  display: none;
+}
+
+.dataset-menu summary::after {
+  color: #aebbb2;
+  content: '⌄';
+  position: absolute;
+  right: 12px;
+  top: 14px;
+}
+
+.dataset-menu:not([open]) summary::after {
+  transform: rotate(-90deg);
+}
+
+.dataset-menu summary span {
   color: #aebbb2;
   font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
 }
 
-.active-dataset strong {
+.dataset-menu summary strong {
   color: #ffffff;
   font-size: 14px;
   overflow-wrap: anywhere;
+}
+
+.dataset-menu a {
+  display: block;
+  font-size: 14px;
+  margin: 0 6px 4px;
+  padding-left: 24px;
+}
+
+.dataset-menu a.router-link-active {
+  background: #2b5345;
 }
 
 .future-section button {
@@ -227,12 +288,22 @@ button:disabled {
   display: flex;
   flex-direction: column;
   gap: 18px;
+  min-width: 0;
   padding: 20px;
+  position: relative;
 }
 
+.dataset-card-link { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+.dataset-card-title { min-width: 0; }
 .dataset-card h2 {
   margin: 4px 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
+
+.dataset-card-title > span { color: #607268; overflow-wrap: anywhere; }
+.delete-dataset { align-self: flex-end; background: #fff4f4; border-color: #e8bdbd; color: #a43838; font-size: 13px; padding: 6px 10px; }
+.delete-dataset:hover:not(:disabled) { background: #fde4e4; }
 
 .metric-row {
   display: grid;
@@ -477,6 +548,31 @@ video {
 .issue.info {
   border-left-color: #2f7d60;
 }
+
+.converter-form { display: grid; gap: 16px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.converter-form label { color: #516158; display: flex; flex-direction: column; font-size: 13px; font-weight: 700; gap: 7px; }
+.converter-form .wide { grid-column: 1 / -1; }
+.converter-form select, .converter-form input { background: #fff; border: 1px solid #cbd4cb; border-radius: 6px; color: #17211d; font: inherit; font-weight: 400; padding: 9px 10px; }
+.converter-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 16px; }
+.converter-actions button { align-items: center; display: inline-flex; gap: 8px; }
+.converter-actions button:last-child { background: #17211d; border-color: #17211d; color: #fff; }
+.notice { background: #edf5e9; border-radius: 6px; color: #3d5b45; font-size: 14px; padding: 10px 12px; }
+.error-notice { background: #fff0f0; color: #9d2c2c; }
+.warning-notice { background: #fff4df; color: #7d5923; }
+.spinner { border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; display: inline-block; height: 14px; animation: converter-spin 700ms linear infinite; width: 14px; }
+.preflight-loading { align-items: center; color: #276956; display: flex; gap: 14px; min-height: 132px; }
+.preflight-loading .spinner { height: 28px; width: 28px; }
+.preflight-loading h2 { margin: 0 0 5px; }
+.preflight-loading p { color: #607268; margin: 0; }
+.job-heading { align-items: center; display: flex; justify-content: space-between; margin-bottom: 12px; }
+.job-heading h2 { margin-bottom: 5px; }
+.job-heading p { align-items: center; color: #607268; display: flex; font-size: 14px; gap: 8px; margin: 0; }
+.job-heading strong { color: #276956; font-size: 24px; }
+.conversion-progress { background: #e4ece5; border-radius: 999px; height: 8px; margin-bottom: 18px; overflow: hidden; }
+.conversion-progress span { background: #3d8a6c; border-radius: inherit; display: block; height: 100%; transition: width 350ms ease; }
+.conversion-job.is-completed .conversion-progress span { background: #2f7d60; }
+.conversion-job.is-failed .conversion-progress span, .conversion-job.is-cancelled .conversion-progress span { background: #b05757; }
+@keyframes converter-spin { to { transform: rotate(360deg); } }
 
 @media (max-width: 980px) {
   body {

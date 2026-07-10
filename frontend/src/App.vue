@@ -13,19 +13,6 @@ const activeDataset = computed(() =>
   datasets.value.find((dataset) => dataset.name === routeDataset.value && dataset.format === routeFormat.value),
 )
 
-const navItems = computed(() => {
-  if (!routeDataset.value || !routeFormat.value) return []
-  return [
-    { label: 'Overview', to: `/datasets/${routeFormat.value}/${routeDataset.value}/overview` },
-    { label: 'Episodes', to: `/datasets/${routeFormat.value}/${routeDataset.value}/episodes` },
-  ]
-})
-
-const isEpisodesActive = computed(() => {
-  if (!routeDataset.value || !routeFormat.value) return false
-  return route.path.startsWith(`/datasets/${routeFormat.value}/${routeDataset.value}/episodes`)
-})
-
 onMounted(async () => {
   try {
     datasets.value = await api.catalog()
@@ -47,26 +34,21 @@ onMounted(async () => {
       </RouterLink>
 
       <nav class="nav-section">
-        <RouterLink to="/">Datasets</RouterLink>
-        <div v-if="routeDataset && routeFormat" class="active-dataset">
-          <span>{{ activeDataset?.format_label ?? routeFormat }}</span>
-          <strong>{{ routeDataset }}</strong>
+        <div class="visualization-nav">
+          <RouterLink to="/">Visualization</RouterLink>
+          <details v-if="routeDataset && routeFormat" class="dataset-menu" open>
+            <summary>
+              <span>{{ activeDataset?.format_label ?? routeFormat }}</span>
+              <strong>{{ routeDataset }}</strong>
+            </summary>
+            <RouterLink :to="`/datasets/${routeFormat}/${routeDataset}/overview`">Overview</RouterLink>
+            <RouterLink :to="`/datasets/${routeFormat}/${routeDataset}/episodes`">Episodes</RouterLink>
+          </details>
+          <span v-else class="nav-placeholder">Select a dataset to unlock views</span>
         </div>
-        <RouterLink
-          v-for="item in navItems"
-          :key="item.to"
-          :to="item.to"
-          :class="{ 'router-link-active': item.label === 'Episodes' && isEpisodesActive }"
-        >
-          {{ item.label }}
-        </RouterLink>
-        <span v-if="!navItems.length" class="nav-placeholder">Select a dataset to unlock views</span>
+        <RouterLink to="/converter">Converter</RouterLink>
       </nav>
 
-      <div class="future-section">
-        <span>Later Pipeline</span>
-        <button disabled>Converter</button>
-      </div>
     </aside>
 
     <main class="main-panel">

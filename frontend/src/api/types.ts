@@ -8,7 +8,7 @@ export interface DatasetListItem {
   fps: number | null
 }
 
-export type DatasetFormat = 'lerobot_v21' | 'lerobot_v30' | 'raw'
+export type DatasetFormat = 'lerobot_v21' | 'lerobot_v30' | 'hdf5' | 'raw'
 
 export interface CatalogDataset {
   name: string
@@ -19,6 +19,11 @@ export interface CatalogDataset {
   total_episodes: number | null
   total_frames: number | null
   fps: number | null
+}
+
+export interface DeletedDataset {
+  name: string
+  deleted: boolean
 }
 
 export interface VideoAsset {
@@ -129,4 +134,58 @@ export interface RawSeriesGroup {
 export interface RawEpisodeSeries {
   episode_name: string
   groups: RawSeriesGroup[]
+}
+
+export interface ConverterOptions {
+  action_type: 'joint' | 'tcp' | 'all'
+  tcp_action_source: 'endpose' | 'target'
+  fps: number
+  trim_trigger_tail: boolean
+  trim_tail_seconds: number
+  instruction: string
+}
+
+export interface ConversionRequest {
+  source_name: string
+  source_format: DatasetFormat
+  target_format: Exclude<DatasetFormat, 'raw'>
+  options: ConverterOptions
+}
+
+export interface ConversionPreflightEpisode {
+  name: string
+  source_frames: number
+  output_frames: number
+  trimmed_frames: number
+  warnings: string[]
+  valid: boolean
+}
+
+export interface ConversionPreflight {
+  source_name: string
+  source_format: DatasetFormat
+  target_format: Exclude<DatasetFormat, 'raw'>
+  total_episodes: number
+  valid_episodes: number
+  total_output_frames: number
+  trim_trigger_episodes: number
+  encoder_available: boolean
+  episodes: ConversionPreflightEpisode[]
+}
+
+export interface ConversionJob {
+  id: string
+  source_name: string
+  source_format: DatasetFormat
+  target_format: Exclude<DatasetFormat, 'raw'>
+  status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
+  stage: string
+  completed_episodes: number
+  total_episodes: number
+  completed_frames: number
+  total_frames: number
+  message: string
+  warnings: string[]
+  output_name: string | null
+  output_path: string | null
 }

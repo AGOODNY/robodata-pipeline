@@ -13,7 +13,7 @@ class DatasetListItem(BaseModel):
     fps: float | None = None
 
 
-DatasetFormat = Literal["lerobot_v21", "lerobot_v30", "raw"]
+DatasetFormat = Literal["lerobot_v21", "lerobot_v30", "hdf5", "raw"]
 
 
 class CatalogDataset(BaseModel):
@@ -25,6 +25,11 @@ class CatalogDataset(BaseModel):
     total_episodes: int | None = None
     total_frames: int | None = None
     fps: float | None = None
+
+
+class DeletedDataset(BaseModel):
+    name: str
+    deleted: bool = True
 
 
 class HealthResponse(BaseModel):
@@ -147,3 +152,57 @@ class RawSeriesGroup(BaseModel):
 class RawEpisodeSeries(BaseModel):
     episode_name: str
     groups: list[RawSeriesGroup]
+
+
+class ConverterOptions(BaseModel):
+    action_type: Literal["joint", "tcp", "all"] = "joint"
+    tcp_action_source: Literal["endpose", "target"] = "endpose"
+    fps: int = 30
+    trim_trigger_tail: bool = True
+    trim_tail_seconds: float = 0.5
+    instruction: str = ""
+
+
+class ConversionPreflightEpisode(BaseModel):
+    name: str
+    source_frames: int
+    output_frames: int
+    trimmed_frames: int = 0
+    warnings: list[str] = []
+    valid: bool = True
+
+
+class ConversionPreflight(BaseModel):
+    source_name: str
+    source_format: DatasetFormat
+    target_format: Literal["lerobot_v21", "lerobot_v30", "hdf5"]
+    total_episodes: int
+    valid_episodes: int
+    total_output_frames: int
+    trim_trigger_episodes: int = 0
+    encoder_available: bool = True
+    episodes: list[ConversionPreflightEpisode]
+
+
+class ConversionCreateRequest(BaseModel):
+    source_name: str
+    source_format: DatasetFormat
+    target_format: Literal["lerobot_v21", "lerobot_v30", "hdf5"]
+    options: ConverterOptions = ConverterOptions()
+
+
+class ConversionJob(BaseModel):
+    id: str
+    source_name: str
+    source_format: DatasetFormat
+    target_format: Literal["lerobot_v21", "lerobot_v30", "hdf5"]
+    status: Literal["queued", "running", "completed", "failed", "cancelled"]
+    stage: str
+    completed_episodes: int = 0
+    total_episodes: int = 0
+    completed_frames: int = 0
+    total_frames: int = 0
+    message: str = ""
+    warnings: list[str] = []
+    output_name: str | None = None
+    output_path: str | None = None

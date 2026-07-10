@@ -159,9 +159,18 @@ def _parse_statistic(path: Path) -> dict[str, Any]:
 
 
 def _camera_stream(episode: Path, key: str, relative: Path, statistic: dict[str, Any]) -> RawCameraStream:
-    files = _readable_timestamp_files(episode / relative, "*.jpg")
     topic = relative.as_posix()
     topic_stats = statistic.get("topics", {}).get(topic, {})
+    recorded_count = topic_stats.get("count")
+    if isinstance(recorded_count, int):
+        return RawCameraStream(
+            key=key,
+            relative_path=topic,
+            frame_count=recorded_count,
+            fps=topic_stats.get("fps"),
+        )
+
+    files = _readable_timestamp_files(episode / relative, "*.jpg")
     return RawCameraStream(
         key=key,
         relative_path=topic,
