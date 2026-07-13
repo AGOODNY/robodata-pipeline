@@ -1,17 +1,33 @@
+# Environment variables
 .env
 .env.*
+!.env.example
+!**/.env.example
 
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
 
-backend/app/**/__pycache__/
-backend/*.log
-backend/.venv/
+# Logs
+*.log
 
+# Frontend
 frontend/node_modules/
 frontend/dist/
 frontend/.vite/
 frontend/tsconfig.tsbuildinfo
-frontend/src/**/*.js
-frontend/src/**/*.js.map
+
+# Editors and operating systems
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+*.tmp
