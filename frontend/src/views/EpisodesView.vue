@@ -9,7 +9,7 @@ import PageState from '../components/PageState.vue'
 const route = useRoute()
 const dataset = computed(() => route.params.dataset as string)
 const format = computed(() => route.params.format as string)
-const formatLabel = computed(() => format.value === 'lerobot_v21' ? 'LeRobot 2.1' : format.value === 'hdf5' ? 'RoboData HDF5' : 'LeRobot 3.0')
+const formatLabel = computed(() => format.value === 'lerobot_v21' ? 'LeRobot 2.1' : format.value === 'hdf5' ? 'HDF5' : 'LeRobot 3.0')
 const episodes = ref<EpisodeListItem[]>([])
 const loading = ref(true)
 const error = ref('')

@@ -2,7 +2,7 @@
 
 The converter never edits source data.  It first materialises a small, explicit
 intermediate representation and writes to a sibling temporary directory.  This
-keeps Raw, LeRobot and RoboData HDF5 conversion semantics in one place.
+keeps Raw, LeRobot and HDF5 conversion semantics in one place.
 """
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Iterator
 
 import h5py
 import numpy as np
@@ -177,6 +177,8 @@ def _raw_camera_files(episode: Path) -> dict[str, list[tuple[float, Path]]]:
 
 
 def preflight(request: ConversionCreateRequest) -> ConversionPreflight:
+    if request.source_format == request.target_format:
+        raise ConversionError("Source and target formats must be different")
     options = request.options
     if request.source_format == "raw":
         rows: list[ConversionPreflightEpisode] = []
@@ -333,7 +335,7 @@ def _encoder_available() -> bool:
         return False
 
 
-def _decode_video(path: Path, expected: int, start: float | None) -> list[np.ndarray]:
+def _decode_video(path: Path, expected: int, start: float | None, on_frame: Callable[[int], None] | None = None) -> list[np.ndarray]:
     if not _encoder_available() or not path.exists():
         return []
     import av
@@ -346,8 +348,12 @@ def _decode_video(path: Path, expected: int, start: float | None) -> list[np.nda
                 pass
         for frame in container.decode(video=0):
             result.append(frame.to_ndarray(format="rgb24"))
+            if on_frame and (len(result) % 30 == 0 or len(result) == expected):
+                on_frame(len(result))
             if len(result) >= expected:
                 break
+    if on_frame:
+        on_frame(len(result))
     return result
 
 
@@ -371,11 +377,87 @@ def _decode_video_segment(path: Path, expected: int, start: float) -> list[np.nd
     return result
 
 
+_HDF5_IMAGE_BATCH_SIZE = 16
+_HDF5_IMAGE_COMPRESSION = "lzf"
+_HDF5_VIDEO_DECODE_THREADS = min(4, max(1, (os.cpu_count() or 2) // 2))
+
+
+def _video_frame_size(path: Path) -> tuple[int, int]:
+    """Return a video's dimensions without decoding its frames."""
+    if not _encoder_available() or not path.exists():
+        raise ConversionError(f"Video is unavailable: {path}")
+    import av
+
+    with av.open(path) as container:
+        stream = container.streams.video[0]
+        if not stream.width or not stream.height:
+            raise ConversionError(f"Video has no usable dimensions: {path}")
+        return int(stream.height), int(stream.width)
+
+
+def _decode_video_batches(
+    path: Path,
+    expected: int,
+    start: float | None = None,
+    on_frame: Callable[[int], None] | None = None,
+) -> Iterator[np.ndarray]:
+    """Yield small RGB batches so HDF5 exports do not retain an episode in RAM."""
+    if not _encoder_available() or not path.exists():
+        return
+    import av
+
+    batch: list[np.ndarray] = []
+    decoded = 0
+    with av.open(path) as container:
+        # PyAV/FFmpeg otherwise auto-selects enough workers to saturate a
+        # laptop CPU.  Conversion is a background job, so leave cores free for
+        # the UI and the rest of the system.
+        container.streams.video[0].thread_count = _HDF5_VIDEO_DECODE_THREADS
+        if start is not None and start > 0:
+            try:
+                container.seek(int(start * av.time_base), any_frame=False, backward=True)
+            except (ValueError, OSError):
+                pass
+        for frame in container.decode(video=0):
+            if start is not None and frame.time is not None and float(frame.time) < start - 1 / 60:
+                continue
+            batch.append(frame.to_ndarray(format="rgb24"))
+            decoded += 1
+            if len(batch) == _HDF5_IMAGE_BATCH_SIZE:
+                yield np.stack(batch)
+                batch.clear()
+            if on_frame and (decoded % 30 == 0 or decoded == expected):
+                on_frame(decoded)
+            if decoded >= expected:
+                break
+    if batch:
+        yield np.stack(batch)
+    if on_frame and decoded % 30:
+        on_frame(decoded)
+
+
+def _create_hdf5_image_dataset(
+    group: h5py.Group,
+    camera: str,
+    count: int,
+    height: int,
+    width: int,
+) -> h5py.Dataset:
+    """Create a lossless, fast-to-write RGB dataset with batch-aligned chunks."""
+    return group.create_dataset(
+        camera,
+        shape=(count, height, width, 3),
+        dtype=np.uint8,
+        compression=_HDF5_IMAGE_COMPRESSION,
+        chunks=(min(_HDF5_IMAGE_BATCH_SIZE, count), height, width, 3),
+    )
+
+
 def _write_hdf5(root: Path, episodes: list[NormalizedEpisode], request: ConversionCreateRequest, progress: Callable[[int, int], None]) -> None:
     (root / "meta").mkdir(parents=True)
     (root / "episodes").mkdir()
     image_features = {f"observation.images.{key}": {"dtype": "image", "shape": [3, int(value.shape[1]), int(value.shape[2])], "names": ["channels", "height", "width"]} for key, value in episodes[0].images.items()}
-    info = {"codebase_version": "robodata_hdf5_v1", "format": "RoboData HDF5 v1", "robot_type": "ur5_pika", "fps": request.options.fps, "total_episodes": len(episodes), "total_frames": int(sum(len(item.timestamps) for item in episodes)), "features": {"observation.state": {"dtype": "float32", "names": episodes[0].state_names}, "action": {"dtype": "float32", "names": episodes[0].action_names}, **image_features}, "source_format": request.source_format}
+    info = {"codebase_version": "hdf5_v1", "format": "HDF5 v1", "robot_type": "ur5_pika", "fps": request.options.fps, "total_episodes": len(episodes), "total_frames": int(sum(len(item.timestamps) for item in episodes)), "features": {"observation.state": {"dtype": "float32", "names": episodes[0].state_names}, "action": {"dtype": "float32", "names": episodes[0].action_names}, **image_features}, "source_format": request.source_format}
     (root / "meta/info.json").write_text(json.dumps(info, indent=2), encoding="utf-8")
     episode_rows: list[dict[str, Any]] = []
     tasks: dict[str, int] = {}
@@ -389,13 +471,90 @@ def _write_hdf5(root: Path, episodes: list[NormalizedEpisode], request: Conversi
             file.create_dataset("action", data=episode.action, compression="gzip")
             images = file.create_group("images")
             for key, values in episode.images.items():
-                images.create_dataset(key, data=values, compression="gzip", chunks=(1, *values.shape[1:]))
+                images.create_dataset(
+                    key,
+                    data=values,
+                    compression=_HDF5_IMAGE_COMPRESSION,
+                    chunks=(min(_HDF5_IMAGE_BATCH_SIZE, len(values)), *values.shape[1:]),
+                )
             extras = file.create_group("extras")
             for key, values in episode.extras.items():
                 extras.create_dataset(key, data=values, compression="gzip")
         tasks.setdefault(episode.task, len(tasks))
         episode_rows.append({"episode_index": index, "episode_name": episode.name, "file": relative, "task": episode.task, "length": len(episode.timestamps), "state_names": episode.state_names, "action_names": episode.action_names, "provenance": episode.provenance})
         done += len(episode.timestamps); progress(index + 1, done)
+    (root / "meta/episodes.jsonl").write_text("".join(json.dumps(row) + "\n" for row in episode_rows), encoding="utf-8")
+    (root / "meta/tasks.jsonl").write_text("".join(json.dumps({"task_index": index, "task": task}) + "\n" for task, index in tasks.items()), encoding="utf-8")
+
+
+def _stream_lerobot_to_hdf5(
+    root: Path,
+    source_name: str,
+    request: ConversionCreateRequest,
+    progress: Callable[[int, int], None],
+    media_progress: Callable[[int, int], None],
+) -> None:
+    """Convert LeRobot to HDF5 one episode and one small RGB batch at a time."""
+    source = lerobot_service.get_dataset_path(source_name)
+    source_info = lerobot_service.load_info(source_name)
+    episodes_df = lerobot_service.load_episodes_df(source_name).sort_values("episode_index")
+    data_df = lerobot_service.load_data_df(source_name)
+    if episodes_df.empty or data_df.empty:
+        raise ConversionError("The LeRobot source has no episodes or data frames")
+    (root / "meta").mkdir(parents=True)
+    (root / "episodes").mkdir()
+    state_feature = source_info.get("features", {}).get("observation.state", {})
+    action_feature = source_info.get("features", {}).get("action", {})
+    episode_rows: list[dict[str, Any]] = []
+    tasks: dict[str, int] = {}
+    image_features: dict[str, Any] = {}
+    completed_frames = 0
+    for output_index, (_, row) in enumerate(episodes_df.iterrows()):
+        source_index = int(row["episode_index"])
+        frames_df = data_df[data_df["episode_index"] == source_index].copy().sort_values("frame_index")
+        count = len(frames_df)
+        if not count:
+            raise ConversionError(f"Episode {source_index} has no data rows")
+        detail = lerobot_service.get_episode(source_name, source_index)
+        task = detail.tasks[0] if detail.tasks else "UR teleop"
+        relative = f"episodes/episode_{output_index:06d}.hdf5"
+        with h5py.File(root / relative, "w") as file:
+            file.create_dataset("timestamp", data=frames_df["timestamp"].to_numpy(dtype=np.float64))
+            file.create_dataset("frame_index", data=np.arange(count, dtype=np.int64))
+            file.create_dataset("observation/state", data=np.stack(frames_df["observation.state"].map(np.asarray).to_list()).astype(np.float32), compression="gzip")
+            file.create_dataset("action", data=np.stack(frames_df["action"].map(np.asarray).to_list()).astype(np.float32), compression="gzip")
+            image_group = file.create_group("images")
+            video_count = len(detail.videos)
+            for video_number, video in enumerate(detail.videos):
+                path = source / video.relative_path
+                height, width = _video_frame_size(path)
+                camera = video.key.removeprefix("observation.images.")
+                dataset = _create_hdf5_image_dataset(image_group, camera, count, height, width)
+                image_features[f"observation.images.{camera}"] = {"dtype": "image", "shape": [3, height, width], "names": ["channels", "height", "width"]}
+                callback = lambda loaded, base=completed_frames, index=output_index, camera_index=video_number: media_progress(
+                    index + 1,
+                    base + int((camera_index * count + loaded) / video_count),
+                )
+                written = 0
+                for batch in _decode_video_batches(path, count, video.from_timestamp, callback):
+                    next_written = written + len(batch)
+                    dataset[written:next_written] = batch
+                    written = next_written
+                if written != count:
+                    raise ConversionError(f"Could not decode all frames for episode {source_index}, camera {video.key}")
+            extras = file.create_group("extras")
+            excluded = {"observation.state", "action", "timestamp", "frame_index", "episode_index", "index", "task_index"}
+            for column in frames_df.columns:
+                if column in excluded or column.startswith("videos/"):
+                    continue
+                values = np.stack(frames_df[column].map(np.asarray).to_list()).astype(np.float32)
+                extras.create_dataset(column, data=values, compression="gzip")
+        tasks.setdefault(task, len(tasks))
+        episode_rows.append({"episode_index": output_index, "episode_name": f"episode_{source_index:06d}", "file": relative, "task": task, "length": count, "state_names": state_feature.get("names") or [], "action_names": action_feature.get("names") or [], "provenance": {"source_dataset": source_name, "source_episode_index": source_index}})
+        completed_frames += count
+        progress(output_index + 1, completed_frames)
+    info = {"codebase_version": "hdf5_v1", "format": "HDF5 v1", "robot_type": source_info.get("robot_type"), "fps": source_info.get("fps"), "total_episodes": len(episode_rows), "total_frames": completed_frames, "features": {"observation.state": state_feature, "action": action_feature, **image_features}, "source_format": request.source_format}
+    (root / "meta/info.json").write_text(json.dumps(info, indent=2), encoding="utf-8")
     (root / "meta/episodes.jsonl").write_text("".join(json.dumps(row) + "\n" for row in episode_rows), encoding="utf-8")
     (root / "meta/tasks.jsonl").write_text("".join(json.dumps({"task_index": index, "task": task}) + "\n" for task, index in tasks.items()), encoding="utf-8")
 
@@ -599,16 +758,43 @@ class ConversionManager:
         return self.get(job_id)
 
     def _run(self, job_id: str, request: ConversionCreateRequest) -> None:
+        two_phase = request.source_format != "raw" and (
+            (request.source_format, request.target_format)
+            not in {
+                ("lerobot_v21", "hdf5"),
+                ("lerobot_v30", "hdf5"),
+                ("lerobot_v21", "lerobot_v30"),
+                ("lerobot_v30", "lerobot_v21"),
+            }
+        )
+
+        def ratio(job: ConversionJob, episodes: int, frames: int) -> float:
+            completed = frames if job.total_frames else episodes
+            total = job.total_frames or job.total_episodes
+            return min(1.0, completed / total) if total else 0.0
+
         def update(episodes: int, frames: int) -> None:
             with self.lock:
                 job = self.jobs[job_id]; job.completed_episodes = episodes; job.completed_frames = frames
                 job.stage = f"Writing episode {episodes}/{job.total_episodes}"
+                write_progress = ratio(job, episodes, frames)
+                job.progress_percent = (50.0 + 50.0 * write_progress) if two_phase else 100.0 * write_progress
             if job_id in self.cancelled: raise ConversionError("Cancelled by user")
         def loading_update(episodes: int, frames: int) -> None:
             with self.lock:
                 job = self.jobs[job_id]
                 job.completed_episodes = episodes
                 job.stage = f"Loading episode media {episodes}/{job.total_episodes}"
+                job.progress_percent = 50.0 * ratio(job, episodes, frames)
+            if job_id in self.cancelled:
+                raise ConversionError("Cancelled by user")
+        def media_update(episodes: int, frames: int) -> None:
+            with self.lock:
+                job = self.jobs[job_id]
+                job.completed_episodes = max(0, episodes - 1)
+                job.completed_frames = frames
+                job.stage = f"Decoding episode video {episodes}/{job.total_episodes}"
+                job.progress_percent = 100.0 * ratio(job, episodes, frames)
             if job_id in self.cancelled:
                 raise ConversionError("Cancelled by user")
         output_root: Path | None = None
@@ -621,6 +807,17 @@ class ConversionManager:
             temporary = output_root.with_name(f".{output_name}.{job_id}.partial")
             temporary.parent.mkdir(parents=True, exist_ok=True)
             if temporary.exists(): shutil.rmtree(temporary)
+            if request.source_format in {"lerobot_v21", "lerobot_v30"} and request.target_format == "hdf5":
+                with self.lock:
+                    self.jobs[job_id].stage = "Streaming LeRobot videos to HDF5"
+                _stream_lerobot_to_hdf5(temporary, request.source_name, request, update, media_update)
+                if job_id in self.cancelled:
+                    raise ConversionError("Cancelled by user")
+                temporary.replace(output_root)
+                with self.lock:
+                    job = self.jobs[job_id]
+                    job.status = "completed"; job.stage = "Completed"; job.completed_episodes = job.total_episodes; job.completed_frames = job.total_frames; job.progress_percent = 100; job.output_name = output_name; job.output_path = str(output_root)
+                return
             if request.source_format == "lerobot_v21" and request.target_format == "lerobot_v30":
                 with self.lock:
                     self.jobs[job_id].stage = "Copying LeRobot 2.1 videos"
@@ -630,7 +827,7 @@ class ConversionManager:
                 temporary.replace(output_root)
                 with self.lock:
                     job = self.jobs[job_id]
-                    job.status = "completed"; job.stage = "Completed"; job.completed_episodes = job.total_episodes; job.completed_frames = job.total_frames; job.output_name = output_name; job.output_path = str(output_root)
+                    job.status = "completed"; job.stage = "Completed"; job.completed_episodes = job.total_episodes; job.completed_frames = job.total_frames; job.progress_percent = 100; job.output_name = output_name; job.output_path = str(output_root)
                 return
             if request.source_format == "lerobot_v30" and request.target_format == "lerobot_v21":
                 with self.lock:
@@ -641,7 +838,7 @@ class ConversionManager:
                 temporary.replace(output_root)
                 with self.lock:
                     job = self.jobs[job_id]
-                    job.status = "completed"; job.stage = "Completed"; job.completed_episodes = job.total_episodes; job.completed_frames = job.total_frames; job.output_name = output_name; job.output_path = str(output_root)
+                    job.status = "completed"; job.stage = "Completed"; job.completed_episodes = job.total_episodes; job.completed_frames = job.total_frames; job.progress_percent = 100; job.output_name = output_name; job.output_path = str(output_root)
                 return
             if request.source_format == "raw":
                 episodes = []
@@ -671,7 +868,7 @@ class ConversionManager:
             if job_id in self.cancelled: raise ConversionError("Cancelled by user")
             temporary.replace(output_root)
             with self.lock:
-                job = self.jobs[job_id]; job.status = "completed"; job.stage = "Completed"; job.completed_episodes = job.total_episodes; job.completed_frames = job.total_frames; job.output_name = output_name; job.output_path = str(output_root)
+                job = self.jobs[job_id]; job.status = "completed"; job.stage = "Completed"; job.completed_episodes = job.total_episodes; job.completed_frames = job.total_frames; job.progress_percent = 100; job.output_name = output_name; job.output_path = str(output_root)
         except Exception as error:
             if output_root:
                 partial = output_root.with_name(f".{output_root.name}.{job_id}.partial")

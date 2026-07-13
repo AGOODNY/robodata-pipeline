@@ -9,7 +9,7 @@ import PageState from '../components/PageState.vue'
 
 const route = useRoute()
 const dataset = computed(() => route.params.dataset as string)
-const formatLabel = computed(() => route.params.format === 'lerobot_v21' ? 'LeRobot 2.1' : route.params.format === 'hdf5' ? 'RoboData HDF5' : 'LeRobot 3.0')
+const formatLabel = computed(() => route.params.format === 'lerobot_v21' ? 'LeRobot 2.1' : route.params.format === 'hdf5' ? 'HDF5' : 'LeRobot 3.0')
 const summary = ref<DatasetSummary | null>(null)
 const loading = ref(true)
 const error = ref('')

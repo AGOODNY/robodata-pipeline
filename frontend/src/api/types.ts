@@ -184,6 +184,7 @@ export interface ConversionJob {
   total_episodes: number
   completed_frames: number
   total_frames: number
+  progress_percent?: number
   message: string
   warnings: string[]
   output_name: string | null

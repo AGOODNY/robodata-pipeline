@@ -37,13 +37,13 @@ def list_catalog_datasets() -> list[CatalogDataset]:
                     fps=dataset.fps,
                 )
             )
-        elif (dataset.codebase_version or "").lower() == "robodata_hdf5_v1":
+        elif (dataset.codebase_version or "").lower().endswith("hdf5_v1"):
             items.append(
                 CatalogDataset(
                     name=dataset.name,
                     path=dataset.path,
                     format="hdf5",
-                    format_label="RoboData HDF5",
+                    format_label="HDF5",
                     robot_type=dataset.robot_type,
                     total_episodes=dataset.total_episodes,
                     total_frames=dataset.total_frames,

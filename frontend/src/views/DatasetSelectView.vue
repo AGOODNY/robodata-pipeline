@@ -14,7 +14,7 @@ const deleting = ref('')
 const sections: Array<{ format: DatasetFormat; label: string }> = [
   { format: 'lerobot_v21', label: 'LeRobot 2.1' },
   { format: 'lerobot_v30', label: 'LeRobot 3.0' },
-  { format: 'hdf5', label: 'RoboData HDF5' },
+  { format: 'hdf5', label: 'HDF5' },
   { format: 'raw', label: 'Raw' },
 ]
 

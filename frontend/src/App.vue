@@ -12,6 +12,14 @@ const routeFormat = computed(() => (route.params.format as string | undefined) ?
 const activeDataset = computed(() =>
   datasets.value.find((dataset) => dataset.name === routeDataset.value && dataset.format === routeFormat.value),
 )
+const datasetRouteRoot = computed(() => routeDataset.value && routeFormat.value
+  ? `/datasets/${routeFormat.value}/${routeDataset.value}`
+  : '')
+const overviewActive = computed(() => Boolean(datasetRouteRoot.value) && route.path === `${datasetRouteRoot.value}/overview`)
+const episodesActive = computed(() => Boolean(datasetRouteRoot.value) && (
+  route.path === `${datasetRouteRoot.value}/episodes`
+  || route.path.startsWith(`${datasetRouteRoot.value}/episodes/`)
+))
 
 onMounted(async () => {
   try {
@@ -41,8 +49,8 @@ onMounted(async () => {
               <span>{{ activeDataset?.format_label ?? routeFormat }}</span>
               <strong>{{ routeDataset }}</strong>
             </summary>
-            <RouterLink :to="`/datasets/${routeFormat}/${routeDataset}/overview`">Overview</RouterLink>
-            <RouterLink :to="`/datasets/${routeFormat}/${routeDataset}/episodes`">Episodes</RouterLink>
+            <RouterLink :to="`/datasets/${routeFormat}/${routeDataset}/overview`" :class="{ 'router-link-active': overviewActive }">Overview</RouterLink>
+            <RouterLink :to="`/datasets/${routeFormat}/${routeDataset}/episodes`" :class="{ 'router-link-active': episodesActive }">Episodes</RouterLink>
           </details>
           <span v-else class="nav-placeholder">Select a dataset to unlock views</span>
         </div>

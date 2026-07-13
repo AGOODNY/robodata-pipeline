@@ -15,6 +15,8 @@ const actionType = ref<'joint' | 'tcp' | 'all' | ''>('')
 const tcpActionSource = ref<'endpose' | 'target'>('endpose')
 const instruction = ref('')
 const preflight = ref<ConversionPreflight | null>(null)
+const preflightExpanded = ref(true)
+const sourcePickerOpen = ref(false)
 const job = ref<ConversionJob | null>(null)
 const loading = ref(true)
 const checking = ref(false)
@@ -23,8 +25,20 @@ const error = ref('')
 let pollTimer = 0
 
 const source = computed(() => datasets.value.find((item) => `${item.format}:${item.name}` === sourceKey.value) ?? null)
+const formatName: Record<DatasetFormat, string> = {
+  lerobot_v21: 'LeRobot 2.1',
+  lerobot_v30: 'LeRobot 3.0',
+  hdf5: 'HDF5',
+  raw: 'Raw capture',
+}
+const targetFormats: Array<{ value: Exclude<DatasetFormat, 'raw'>; label: string }> = [
+  { value: 'lerobot_v21', label: 'LeRobot 2.1' },
+  { value: 'lerobot_v30', label: 'LeRobot 3.0' },
+  { value: 'hdf5', label: 'HDF5' },
+]
+const availableTargetFormats = computed(() => targetFormats.filter((item) => item.value !== source.value?.format))
 const payload = computed<ConversionRequest | null>(() => {
-  if (!source.value || !targetFormat.value || (source.value.format === 'raw' && !actionType.value)) return null
+  if (!source.value || !targetFormat.value || source.value.format === targetFormat.value || (source.value.format === 'raw' && !actionType.value)) return null
   return {
   source_name: source.value.name,
   source_format: source.value.format,
@@ -35,8 +49,9 @@ const payload = computed<ConversionRequest | null>(() => {
 const canStart = computed(() => Boolean(preflight.value?.valid_episodes) && !checking.value && !job.value && (targetFormat.value === 'hdf5' || preflight.value?.encoder_available))
 const jobIsActive = computed(() => job.value?.status === 'queued' || job.value?.status === 'running')
 const jobProgress = computed(() => {
+  if (typeof job.value?.progress_percent === 'number') return Math.min(100, Math.round(job.value.progress_percent * 10) / 10)
   if (!job.value?.total_frames) return 0
-  return Math.min(100, Math.round((job.value.completed_frames / job.value.total_frames) * 100))
+  return Math.min(100, Math.round((job.value.completed_frames / job.value.total_frames) * 1000) / 10)
 })
 const jobStatusText = computed(() => {
   if (!job.value) return ''
@@ -50,14 +65,24 @@ const jobStatusText = computed(() => {
 async function refreshPreflight() {
   if (!payload.value || job.value) {
     preflight.value = null
+    preflightExpanded.value = false
     checking.value = false
     return
   }
-  checking.value = true; error.value = ''
-  try { preflight.value = await api.converterPreflight(payload.value) }
+  checking.value = true; preflightExpanded.value = true; error.value = ''
+  try { preflight.value = await api.converterPreflight(payload.value); preflightExpanded.value = true }
   catch (err) { error.value = err instanceof Error ? err.message : String(err); preflight.value = null }
   finally { checking.value = false }
 }
+
+function selectSource(item: CatalogDataset) {
+  sourceKey.value = `${item.format}:${item.name}`
+  sourcePickerOpen.value = false
+}
+
+watch(source, (selected) => {
+  if (selected?.format === targetFormat.value) targetFormat.value = ''
+})
 
 async function startConversion() {
   if (!payload.value) return
@@ -94,18 +119,40 @@ onUnmounted(() => window.clearTimeout(pollTimer))
     <PageState :loading="loading" :error="error" />
     <template v-if="!loading && datasets.length">
       <section class="panel converter-form">
+        <div class="source-picker" :class="{ open: sourcePickerOpen }">
+          <span class="field-label">Source dataset</span>
+          <button type="button" class="source-picker-trigger" :disabled="!!job" :aria-expanded="sourcePickerOpen" @click="sourcePickerOpen = !sourcePickerOpen">
+            <template v-if="source"><span class="format-badge" :class="`format-${source.format}`">{{ formatName[source.format] }}</span><span class="source-picker-name">{{ source.name }}</span></template>
+            <span v-else class="source-picker-placeholder">Select a source dataset</span><span class="source-picker-chevron" aria-hidden="true">⌄</span>
+          </button>
+          <div v-if="sourcePickerOpen" class="source-picker-menu" role="listbox" aria-label="Source dataset">
+            <button v-for="item in datasets" :key="`${item.format}:${item.name}`" type="button" class="source-picker-option" :class="{ selected: sourceKey === `${item.format}:${item.name}` }" role="option" :aria-selected="sourceKey === `${item.format}:${item.name}`" @click="selectSource(item)">
+              <span class="format-badge" :class="`format-${item.format}`">{{ formatName[item.format] }}</span><span class="source-picker-name">{{ item.name }}</span><small>{{ item.total_episodes ?? 0 }} episodes</small>
+            </button>
+          </div>
+        </div>
         <label>Source dataset<select v-model="sourceKey" :disabled="!!job"><option disabled value="">Select a source dataset</option><option v-for="item in datasets" :key="`${item.format}:${item.name}`" :value="`${item.format}:${item.name}`">{{ item.format_label }} · {{ item.name }}</option></select></label>
-        <label>Target format<select v-model="targetFormat" :disabled="!!job"><option disabled value="">Select a target format</option><option value="lerobot_v21">LeRobot 2.1</option><option value="lerobot_v30">LeRobot 3.0</option><option value="hdf5">RoboData HDF5</option></select></label>
+        <label>Target format<select v-model="targetFormat" :disabled="!!job"><option disabled value="">Select a target format</option><option v-for="item in availableTargetFormats" :key="item.value" :value="item.value">{{ item.label }}</option></select></label>
         <template v-if="source?.format === 'raw'"><label>Action mode<select v-model="actionType" :disabled="!!job"><option disabled value="">Select an action mode</option><option value="joint">Joint</option><option value="tcp">TCP</option><option value="all">All (joint + TCP)</option></select></label><label v-if="actionType === 'tcp'">TCP action<select v-model="tcpActionSource" :disabled="!!job"><option value="endpose">Next actual TCP</option><option value="target">Target TCP</option></select></label></template>
         <label class="wide">Task override (optional)<input v-model="instruction" :disabled="!!job" placeholder="Use instructions.json or infer from task folder" /></label>
       </section>
 
       <section v-if="checking && !preflight" class="panel preflight-loading"><span class="spinner" aria-hidden="true"></span><div><h2>Preparing preflight…</h2><p>Checking episode frames, timestamps, and smart-tail cleaning. Large Raw datasets can take a few seconds.</p></div></section>
-      <section v-if="preflight" class="panel">
-        <h2>Preflight</h2>
+      <section v-if="preflight" class="panel preflight-panel" :class="{ collapsed: !preflightExpanded }">
+        <div class="preflight-dropdown-heading">
+          <button type="button" class="preflight-toggle" :aria-expanded="preflightExpanded" @click="preflightExpanded = !preflightExpanded">
+            <span><strong>Preflight</strong><small>{{ preflightExpanded ? 'Episode-level validation results' : 'Validation complete — expand to inspect details' }}</small></span>
+            <span class="preflight-chevron" :class="{ expanded: preflightExpanded }" aria-hidden="true">⌄</span>
+          </button>
+          <button type="button" class="button-secondary preflight-rerun" :disabled="checking || !!job" @click.stop="refreshPreflight">{{ checking ? 'Checking…' : 'Re-run' }}</button>
+        </div>
+        <div class="panel-heading"><div><h2>Preflight</h2><p>{{ preflightExpanded ? 'Episode-level validation results' : 'Validation complete. Open details only when you need to inspect individual episodes.' }}</p></div><div class="preflight-actions"><button type="button" class="button-secondary" :disabled="checking || !!job" @click="refreshPreflight">{{ checking ? 'Checking…' : 'Re-run' }}</button><button type="button" class="button-secondary" :aria-expanded="preflightExpanded" @click="preflightExpanded = !preflightExpanded">{{ preflightExpanded ? 'Collapse' : 'Open details' }}</button></div></div>
         <div class="metric-row"><MetricCard label="Valid episodes" :value="`${preflight.valid_episodes} / ${preflight.total_episodes}`" /><MetricCard label="Output frames" :value="preflight.total_output_frames" /><MetricCard label="Trigger trims" :value="preflight.trim_trigger_episodes" /><MetricCard label="Video encoder" :value="preflight.encoder_available ? 'Ready' : 'Missing'" /></div>
         <p v-if="targetFormat !== 'hdf5' && !preflight.encoder_available" class="notice error-notice">LeRobot export is disabled because the backend cannot find PyAV, which creates MP4 camera videos. In <code>robodata-pipeline/backend</code>, run <code>.\.venv\Scripts\python.exe -m pip install -r requirements.txt</code>, then restart the backend with that same <code>.venv</code> Python environment and refresh this page.</p>
         <p v-if="source?.format === 'raw'" class="notice">Smart cleaning is on: only gripper-double-click stop episodes lose their final 0.5 seconds. Raw files are never changed.</p>
+        <button type="button" class="episode-table-toggle" :aria-expanded="preflightExpanded" @click="preflightExpanded = !preflightExpanded">
+          <span>Episode</span><span>Frames</span><span>Trimmed</span><span class="episode-status-heading">Status <span class="preflight-chevron" :class="{ expanded: preflightExpanded }" aria-hidden="true">⌄</span></span>
+        </button>
         <table><thead><tr><th>Episode</th><th>Frames</th><th>Trimmed</th><th>Status</th></tr></thead><tbody><tr v-for="episode in preflight.episodes" :key="episode.name"><td>{{ episode.name }}</td><td>{{ episode.source_frames }} → {{ episode.output_frames }}</td><td>{{ episode.trimmed_frames }}</td><td>{{ episode.valid ? 'Ready' : episode.warnings.join('; ') }}</td></tr></tbody></table>
         <div v-if="!job" class="converter-actions"><button :disabled="!canStart || starting" :title="!canStart && targetFormat !== 'hdf5' && !preflight.encoder_available ? 'Install PyAV in the backend environment to enable LeRobot export.' : ''" @click="startConversion"><span v-if="checking || starting" class="spinner" aria-hidden="true"></span>{{ checking ? 'Checking…' : starting ? 'Starting conversion…' : 'Convert' }}</button></div>
       </section>

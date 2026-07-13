@@ -202,6 +202,7 @@ class ConversionJob(BaseModel):
     total_episodes: int = 0
     completed_frames: int = 0
     total_frames: int = 0
+    progress_percent: float = 0
     message: str = ""
     warnings: list[str] = []
     output_name: str | None = None

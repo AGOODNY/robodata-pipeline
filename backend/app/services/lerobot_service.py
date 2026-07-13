@@ -81,7 +81,7 @@ def _is_v21_info(info: dict[str, Any]) -> bool:
 
 
 def _is_hdf5_info(info: dict[str, Any]) -> bool:
-    return str(info.get("codebase_version", "")).lower() == "robodata_hdf5_v1"
+    return str(info.get("codebase_version", "")).lower().endswith("hdf5_v1")
 
 
 @lru_cache(maxsize=16)
@@ -339,7 +339,7 @@ def media_file(dataset_name: str, relative_path: str) -> Path:
 def _hdf5_episode_row(dataset_name: str, episode_index: int) -> dict[str, Any]:
     info = load_info(dataset_name)
     if not _is_hdf5_info(info):
-        raise DatasetNotFoundError(f"{dataset_name} is not a RoboData HDF5 dataset")
+        raise DatasetNotFoundError(f"{dataset_name} is not an HDF5 dataset")
     rows = _read_jsonl(get_dataset_path(dataset_name) / "meta" / "episodes.jsonl")
     for row in rows:
         if int(row.get("episode_index", -1)) == episode_index:
@@ -355,7 +355,7 @@ def hdf5_frames(dataset_name: str, episode_index: int, camera: str) -> dict[str,
             raise DatasetNotFoundError(camera)
         count = len(file["images"][camera])
         timestamps = file["timestamp"][:count]
-    return {"camera": camera, "frames": [{"index": index, "timestamp": float(timestamps[index]), "relative_path": f"images/{camera}/{index}", "url": f"/hdf5-media/{dataset_name}/{episode_index}/{camera}/{index}"} for index in range(count)]}
+    return {"camera": camera, "frames": [{"index": index, "timestamp": float(timestamps[index]), "relative_path": f"images/{camera}/{index}", "url": f"/api/hdf5-media/{dataset_name}/{episode_index}/{camera}/{index}"} for index in range(count)]}
 
 
 def hdf5_frame(dataset_name: str, episode_index: int, camera: str, frame_index: int) -> Any:
