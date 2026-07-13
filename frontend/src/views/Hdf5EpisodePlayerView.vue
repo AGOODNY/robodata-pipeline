@@ -4,7 +4,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 
 import { api } from '../api/client'
-import type { EpisodeDetail, EpisodeSeries, RawFrame } from '../api/types'
+import type { EpisodeDetail, EpisodeSeries, Hdf5Camera, RawFrame } from '../api/types'
 import MetricCard from '../components/MetricCard.vue'
 import PageState from '../components/PageState.vue'
 import PlaybackControls from '../components/PlaybackControls.vue'
@@ -16,7 +16,8 @@ const episodeIndex = computed(() => Number(route.params.episode))
 const episode = ref<EpisodeDetail | null>(null)
 const series = ref<EpisodeSeries | null>(null)
 const frames = ref<RawFrame[]>([])
-const camera = ref('pikaGripperDepthCamera')
+const cameras = ref<Hdf5Camera[]>([])
+const camera = ref('')
 const frameIndex = ref(0)
 const playing = ref(false)
 const playbackRate = ref(1)
@@ -44,12 +45,23 @@ const { frameRendered } = useFramePlayback({
 })
 
 async function loadFrames() {
-  try {
-    const loaded = (await api.hdf5Frames(dataset.value, episodeIndex.value, camera.value)).frames
-    frames.value = loaded.map((frame) => ({ ...frame, url: frame.url.startsWith('/hdf5-media/') ? `/api${frame.url}` : frame.url }))
-    frameIndex.value = 0
+  if (!camera.value) {
+    frames.value = []
+    return
   }
-  catch { if (camera.value !== 'orbbecCamera') { camera.value = 'orbbecCamera'; return } throw new Error('No RGB frames stored in this HDF5 episode') }
+  const loaded = (await api.hdf5Frames(dataset.value, episodeIndex.value, camera.value)).frames
+  frames.value = loaded.map((frame) => ({ ...frame, url: frame.url.startsWith('/hdf5-media/') ? `/api${frame.url}` : frame.url }))
+  frameIndex.value = 0
+}
+
+async function selectCamera(key: string) {
+  if (key === camera.value) return
+  playing.value = false
+  frameIndex.value = 0
+  camera.value = key
+  error.value = ''
+  try { await loadFrames() }
+  catch (err) { error.value = err instanceof Error ? err.message : String(err); frames.value = [] }
 }
 
 function previousFrame() {
@@ -113,20 +125,14 @@ watch(playing, (value) => {
   }
 })
 watch(frameIndex, updateMarker)
-watch(camera, async () => {
-  playing.value = false
-  frameIndex.value = 0
-  try { await loadFrames() }
-  catch (err) { error.value = err instanceof Error ? err.message : String(err) }
-})
-onMounted(async () => { try { episode.value = await api.episode(dataset.value, episodeIndex.value); series.value = await api.series(dataset.value, episodeIndex.value); await loadFrames(); await nextTick(); renderChart(); updateMarker(); window.addEventListener('resize', resizeChart) } catch (err) { error.value = err instanceof Error ? err.message : String(err) } finally { loading.value = false } })
+onMounted(async () => { try { episode.value = await api.episode(dataset.value, episodeIndex.value); series.value = await api.series(dataset.value, episodeIndex.value); cameras.value = (await api.hdf5Cameras(dataset.value, episodeIndex.value)).cameras; if (!cameras.value.length) throw new Error('No RGB frames stored in this HDF5 episode'); camera.value = cameras.value[0].key; await loadFrames(); await nextTick(); renderChart(); updateMarker(); window.addEventListener('resize', resizeChart) } catch (err) { error.value = err instanceof Error ? err.message : String(err) } finally { loading.value = false } })
 onUnmounted(() => { window.removeEventListener('resize', resizeChart); chart?.dispose() })
 </script>
 
 <template>
   <section class="page"><header class="page-header"><div><p class="eyebrow">HDF5 Player</p><h1>{{ dataset }} / #{{ episodeIndex }}</h1></div><RouterLink class="button" :to="`/datasets/hdf5/${dataset}/episodes`">Episodes</RouterLink></header><PageState :loading="loading" :error="error" />
   <template v-if="episode"><div class="metric-row"><MetricCard label="Format" value="HDF5" /><MetricCard label="Frame" :value="frames.length ? `${frameIndex + 1} / ${frames.length}` : 'N/A'" /><MetricCard label="Seconds" :value="`${seconds.toFixed(2)}s / ${totalSeconds.toFixed(2)}s`" /><MetricCard label="Task" :value="episode.tasks.join(', ')" /></div>
-      <section class="panel raw-player-panel"><div class="video-tabs"><button :class="{ active: camera === 'pikaGripperDepthCamera' }" @click="camera = 'pikaGripperDepthCamera'">Gripper camera</button><button :class="{ active: camera === 'orbbecCamera' }" @click="camera = 'orbbecCamera'">Orbbec camera</button></div><div class="raw-frame-stage"><img v-if="current" :src="current.url" :alt="`${camera} frame ${frameIndex + 1}`" @load="frameRendered" @error="frameRendered" /><div v-else class="page-state">No RGB frame available.</div></div><PlaybackControls v-model:playback-rate="playbackRate" :playing="playing" :disabled="!frames.length" :at-start="frameIndex === 0" :at-end="frameIndex >= frames.length - 1" :position="frameIndex" :max="Math.max(frames.length - 1, 0)" :step="1" :time-label="`${seconds.toFixed(2)}s`" @toggle="playing = !playing" @previous="previousFrame" @next="nextFrame" @seek="playing = false; frameIndex = $event" /></section>
+      <section class="panel raw-player-panel"><div class="video-tabs"><button v-for="item in cameras" :key="item.key" :class="{ active: camera === item.key }" :disabled="!item.frame_count" @click="selectCamera(item.key)">{{ item.key }} ({{ item.frame_count }})</button></div><div class="raw-frame-stage"><img v-if="current" :src="current.url" :alt="`${camera} frame ${frameIndex + 1}`" @load="frameRendered" @error="frameRendered" /><div v-else class="page-state">No RGB frame available.</div></div><PlaybackControls v-model:playback-rate="playbackRate" :playing="playing" :disabled="!frames.length" :at-start="frameIndex === 0" :at-end="frameIndex >= frames.length - 1" :position="frameIndex" :max="Math.max(frames.length - 1, 0)" :step="1" :time-label="`${seconds.toFixed(2)}s`" @toggle="playing = !playing" @previous="previousFrame" @next="nextFrame" @seek="playing = false; frameIndex = $event" /></section>
       <section class="panel chart-panel"><h2>State / Action Curves</h2><div v-if="series?.timestamp.length" ref="chartEl" class="chart"></div><div v-else class="page-state">No state or action series found.</div></section>
     </template></section>
 </template>

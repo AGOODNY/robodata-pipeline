@@ -1,5 +1,3 @@
-# RoboData Pipeline
-
 ## 1. 简介
 
 项目采用前后端分离结构：

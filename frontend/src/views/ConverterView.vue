@@ -21,6 +21,7 @@ const job = ref<ConversionJob | null>(null)
 const loading = ref(true)
 const checking = ref(false)
 const starting = ref(false)
+const cancelling = ref(false)
 const error = ref('')
 let pollTimer = 0
 
@@ -47,7 +48,8 @@ const payload = computed<ConversionRequest | null>(() => {
   }
 })
 const canStart = computed(() => Boolean(preflight.value?.valid_episodes) && !checking.value && !job.value && (targetFormat.value === 'hdf5' || preflight.value?.encoder_available))
-const jobIsActive = computed(() => job.value?.status === 'queued' || job.value?.status === 'running')
+const jobIsActive = computed(() => job.value?.status === 'queued' || job.value?.status === 'running' || job.value?.status === 'cancelling')
+const jobCanCancel = computed(() => job.value?.status === 'queued' || job.value?.status === 'running')
 const jobProgress = computed(() => {
   if (typeof job.value?.progress_percent === 'number') return Math.min(100, Math.round(job.value.progress_percent * 10) / 10)
   if (!job.value?.total_frames) return 0
@@ -58,6 +60,7 @@ const jobStatusText = computed(() => {
   if (job.value.status === 'queued') return 'Queued — waiting for the converter worker to start'
   if (job.value.status === 'running') return 'Converting — keep this page open or return later'
   if (job.value.status === 'completed') return 'Conversion completed successfully'
+  if (job.value.status === 'cancelling') return 'Cancelling - finishing the current media batch'
   if (job.value.status === 'cancelled') return 'Conversion cancelled'
   return 'Conversion failed'
 })
@@ -96,11 +99,23 @@ async function pollJob() {
   if (!job.value) return
   try {
     job.value = await api.conversionJob(job.value.id)
-    if (job.value.status === 'queued' || job.value.status === 'running') pollTimer = window.setTimeout(pollJob, 700)
+    if (jobIsActive.value) pollTimer = window.setTimeout(pollJob, 700)
+    else cancelling.value = false
   } catch (err) { error.value = err instanceof Error ? err.message : String(err) }
 }
 
-async function cancelConversion() { if (job.value) job.value = await api.cancelConversion(job.value.id) }
+async function cancelConversion() {
+  if (!job.value || cancelling.value || !jobCanCancel.value) return
+  cancelling.value = true
+  error.value = ''
+  const jobId = job.value.id
+  job.value = { ...job.value, status: 'cancelling', stage: 'Cancelling', message: 'Cancellation requested; finishing the current media batch.' }
+  try { job.value = await api.cancelConversion(jobId) }
+  catch (err) {
+    cancelling.value = false
+    error.value = err instanceof Error ? err.message : String(err)
+  }
+}
 function openOutput() { if (job.value?.output_name) router.push(`/datasets/${job.value.target_format}/${job.value.output_name}/overview`) }
 
 watch([sourceKey, targetFormat, actionType, tcpActionSource], refreshPreflight)
@@ -154,10 +169,10 @@ onUnmounted(() => window.clearTimeout(pollTimer))
           <span>Episode</span><span>Frames</span><span>Trimmed</span><span class="episode-status-heading">Status <span class="preflight-chevron" :class="{ expanded: preflightExpanded }" aria-hidden="true">⌄</span></span>
         </button>
         <table><thead><tr><th>Episode</th><th>Frames</th><th>Trimmed</th><th>Status</th></tr></thead><tbody><tr v-for="episode in preflight.episodes" :key="episode.name"><td>{{ episode.name }}</td><td>{{ episode.source_frames }} → {{ episode.output_frames }}</td><td>{{ episode.trimmed_frames }}</td><td>{{ episode.valid ? 'Ready' : episode.warnings.join('; ') }}</td></tr></tbody></table>
-        <div v-if="!job" class="converter-actions"><button :disabled="!canStart || starting" :title="!canStart && targetFormat !== 'hdf5' && !preflight.encoder_available ? 'Install PyAV in the backend environment to enable LeRobot export.' : ''" @click="startConversion"><span v-if="checking || starting" class="spinner" aria-hidden="true"></span>{{ checking ? 'Checking…' : starting ? 'Starting conversion…' : 'Convert' }}</button></div>
+        <div v-if="!job" class="converter-actions"><button class="convert-action" :disabled="!canStart || starting" :title="!canStart && targetFormat !== 'hdf5' && !preflight.encoder_available ? 'Install PyAV in the backend environment to enable LeRobot export.' : ''" @click="startConversion"><span v-if="checking || starting" class="spinner" aria-hidden="true"></span>{{ checking ? 'Checking…' : starting ? 'Starting conversion…' : 'Convert' }}</button></div>
       </section>
 
-      <section v-if="job" class="panel conversion-job" :class="`is-${job.status}`"><div class="job-heading"><div><h2>Conversion job</h2><p><span v-if="jobIsActive" class="spinner" aria-hidden="true"></span>{{ jobStatusText }}</p></div><strong>{{ jobProgress }}%</strong></div><div class="conversion-progress" role="progressbar" :aria-valuenow="jobProgress" aria-valuemin="0" aria-valuemax="100"><span :style="{ width: `${jobProgress}%` }"></span></div><div class="metric-row"><MetricCard label="Status" :value="job.status" /><MetricCard label="Stage" :value="job.stage" /><MetricCard label="Episodes" :value="`${job.completed_episodes} / ${job.total_episodes}`" /><MetricCard label="Frames" :value="`${job.completed_frames} / ${job.total_frames}`" /></div><p v-if="job.message" class="notice error-notice">{{ job.message }}</p><p v-else-if="job.status === 'failed'" class="notice error-notice">The converter stopped before publishing an output dataset. Check the backend terminal for details.</p><p v-if="job.warnings.length" class="notice warning-notice">Completed with source warnings: {{ job.warnings.join(' · ') }}</p><div class="converter-actions"><button v-if="jobIsActive" @click="cancelConversion">Cancel</button><button v-if="job.status === 'completed'" @click="openOutput">View dataset</button></div></section>
+      <section v-if="job" class="panel conversion-job" :class="`is-${job.status}`"><div class="job-heading"><div><h2>Conversion job</h2><p><span v-if="jobIsActive" class="spinner" aria-hidden="true"></span>{{ jobStatusText }}</p></div><strong>{{ jobProgress }}%</strong></div><div class="conversion-progress" role="progressbar" :aria-valuenow="jobProgress" aria-valuemin="0" aria-valuemax="100"><span :style="{ width: `${jobProgress}%` }"></span></div><div class="metric-row"><MetricCard label="Status" :value="job.status" /><MetricCard label="Stage" :value="job.stage" /><MetricCard label="Episodes" :value="`${job.completed_episodes} / ${job.total_episodes}`" /><MetricCard label="Frames" :value="`${job.completed_frames} / ${job.total_frames}`" /></div><p v-if="job.message" class="notice error-notice">{{ job.message }}</p><p v-else-if="job.status === 'failed'" class="notice error-notice">The converter stopped before publishing an output dataset. Check the backend terminal for details.</p><p v-if="job.warnings.length" class="notice warning-notice">Completed with source warnings: {{ job.warnings.join(' · ') }}</p><div class="converter-actions"><button v-if="jobCanCancel || cancelling" class="cancel-action" :disabled="cancelling" @click="cancelConversion"><span v-if="cancelling" class="spinner" aria-hidden="true"></span>{{ cancelling ? 'Cancelling…' : 'Cancel' }}</button><button v-if="job.status === 'completed'" class="view-output-action" @click="openOutput">View dataset</button></div></section>
     </template>
   </section>
 </template>

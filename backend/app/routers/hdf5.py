@@ -3,9 +3,18 @@ from io import BytesIO
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import Response
 
-from app.services.lerobot_service import DatasetNotFoundError, hdf5_frame, hdf5_frames
+from app.models.schemas import Hdf5CameraList
+from app.services.lerobot_service import DatasetNotFoundError, hdf5_cameras, hdf5_frame, hdf5_frames
 
 router = APIRouter()
+
+
+@router.get("/datasets/{dataset_name}/episodes/{episode_index}/cameras", response_model=Hdf5CameraList)
+def episode_cameras(dataset_name: str, episode_index: int) -> Hdf5CameraList:
+    try:
+        return Hdf5CameraList(**hdf5_cameras(dataset_name, episode_index))
+    except DatasetNotFoundError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
 
 
 @router.get("/datasets/{dataset_name}/episodes/{episode_index}/frames")

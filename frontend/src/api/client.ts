@@ -15,6 +15,7 @@ import type {
   ConversionPreflight,
   ConversionRequest,
   DeletedDataset,
+  Hdf5CameraList,
 } from './types'
 
 async function request<T>(path: string): Promise<T> {
@@ -66,4 +67,6 @@ export const api = {
   deleteDataset: (dataset: string) => send<DeletedDataset>(`/api/catalog/datasets/${encodeURIComponent(dataset)}`, 'DELETE'),
   hdf5Frames: (dataset: string, episode: number, camera: string) =>
     request<RawFrameList>(`/api/datasets/${dataset}/episodes/${episode}/frames?camera=${encodeURIComponent(camera)}`),
+  hdf5Cameras: (dataset: string, episode: number) =>
+    request<Hdf5CameraList>(`/api/datasets/${dataset}/episodes/${episode}/cameras`),
 }

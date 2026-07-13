@@ -136,6 +136,17 @@ class RawFrameList(BaseModel):
     frames: list[RawFrame]
 
 
+class Hdf5Camera(BaseModel):
+    key: str
+    frame_count: int
+    height: int
+    width: int
+
+
+class Hdf5CameraList(BaseModel):
+    cameras: list[Hdf5Camera]
+
+
 class RawSeriesLine(BaseModel):
     key: str
     label: str
@@ -196,7 +207,7 @@ class ConversionJob(BaseModel):
     source_name: str
     source_format: DatasetFormat
     target_format: Literal["lerobot_v21", "lerobot_v30", "hdf5"]
-    status: Literal["queued", "running", "completed", "failed", "cancelled"]
+    status: Literal["queued", "running", "cancelling", "completed", "failed", "cancelled"]
     stage: str
     completed_episodes: int = 0
     total_episodes: int = 0

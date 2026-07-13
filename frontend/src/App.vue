@@ -8,7 +8,8 @@ import type { CatalogDataset } from './api/types'
 const route = useRoute()
 const datasets = ref<CatalogDataset[]>([])
 const routeDataset = computed(() => route.params.dataset as string | undefined)
-const routeFormat = computed(() => (route.params.format as string | undefined) ?? (route.path.startsWith('/datasets/raw/') ? 'raw' : undefined))
+const routeFormat = computed(() => (route.params.format as string | undefined)
+  ?? (route.path.startsWith('/datasets/raw/') ? 'raw' : route.path.startsWith('/datasets/hdf5/') ? 'hdf5' : undefined))
 const activeDataset = computed(() =>
   datasets.value.find((dataset) => dataset.name === routeDataset.value && dataset.format === routeFormat.value),
 )

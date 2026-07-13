@@ -187,6 +187,7 @@ def list_datasets() -> list[DatasetListItem]:
 def get_summary(dataset_name: str) -> DatasetSummary:
     dataset = get_dataset_path(dataset_name)
     info = load_info(dataset_name)
+    tasks = load_tasks(dataset_name)
     return DatasetSummary(
         name=dataset.name,
         path=str(dataset),
@@ -194,10 +195,10 @@ def get_summary(dataset_name: str) -> DatasetSummary:
         robot_type=info.get("robot_type"),
         total_episodes=info.get("total_episodes"),
         total_frames=info.get("total_frames"),
-        total_tasks=info.get("total_tasks"),
+        total_tasks=info.get("total_tasks") if info.get("total_tasks") is not None else len(tasks),
         fps=info.get("fps"),
         features=_jsonable(info.get("features", {})),
-        tasks=load_tasks(dataset_name),
+        tasks=tasks,
         stats=_jsonable(load_stats(dataset_name)),
     )
 
@@ -356,6 +357,21 @@ def hdf5_frames(dataset_name: str, episode_index: int, camera: str) -> dict[str,
         count = len(file["images"][camera])
         timestamps = file["timestamp"][:count]
     return {"camera": camera, "frames": [{"index": index, "timestamp": float(timestamps[index]), "relative_path": f"images/{camera}/{index}", "url": f"/api/hdf5-media/{dataset_name}/{episode_index}/{camera}/{index}"} for index in range(count)]}
+
+
+def hdf5_cameras(dataset_name: str, episode_index: int) -> dict[str, Any]:
+    row = _hdf5_episode_row(dataset_name, episode_index)
+    path = get_dataset_path(dataset_name) / str(row["file"])
+    cameras: list[dict[str, Any]] = []
+    with h5py.File(path, "r") as file:
+        if "images" not in file:
+            return {"cameras": cameras}
+        for key in file["images"]:
+            shape = tuple(int(value) for value in file["images"][key].shape)
+            if len(shape) != 4 or shape[3] != 3:
+                continue
+            cameras.append({"key": key, "frame_count": shape[0], "height": shape[1], "width": shape[2]})
+    return {"cameras": cameras}
 
 
 def hdf5_frame(dataset_name: str, episode_index: int, camera: str, frame_index: int) -> Any:

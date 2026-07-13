@@ -588,8 +588,13 @@ video {
 .format-hdf5 { background: #f2ebff; color: #6b4b9e; }
 .format-raw { background: #fff3df; color: #8a5a19; }
 .converter-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 16px; }
-.converter-actions button { align-items: center; display: inline-flex; gap: 8px; }
-.converter-actions button:last-child { background: #17211d; border-color: #17211d; color: #fff; }
+.converter-actions button { align-items: center; display: inline-flex; gap: 8px; transition: background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease, color 160ms ease, transform 160ms ease; }
+.converter-actions button:hover:not(:disabled) { box-shadow: 0 7px 16px rgba(23, 33, 29, 0.18); transform: translateY(-2px); }
+.converter-actions button:active:not(:disabled) { box-shadow: 0 3px 8px rgba(23, 33, 29, 0.16); transform: translateY(0) scale(0.98); }
+.convert-action, .view-output-action { background: #17211d; border-color: #17211d; color: #fff; }
+.convert-action:hover:not(:disabled), .view-output-action:hover:not(:disabled) { background: #2f4b3f; border-color: #2f4b3f; }
+.cancel-action { background: #fff5f5; border-color: #dc9898; color: #a52f2f; }
+.cancel-action:hover:not(:disabled) { background: #b53b3b; border-color: #b53b3b; color: #fff; }
 .notice { background: #edf5e9; border-radius: 6px; color: #3d5b45; font-size: 14px; padding: 10px 12px; }
 .error-notice { background: #fff0f0; color: #9d2c2c; }
 .warning-notice { background: #fff4df; color: #7d5923; }
@@ -631,6 +636,7 @@ video {
 .conversion-progress { background: #e4ece5; border-radius: 999px; height: 8px; margin-bottom: 18px; overflow: hidden; }
 .conversion-progress span { background: #3d8a6c; border-radius: inherit; display: block; height: 100%; transition: width 350ms ease; }
 .conversion-job.is-completed .conversion-progress span { background: #2f7d60; }
+.conversion-job.is-cancelling .conversion-progress span { background: #c58a2d; }
 .conversion-job.is-failed .conversion-progress span, .conversion-job.is-cancelled .conversion-progress span { background: #b05757; }
 @keyframes converter-spin { to { transform: rotate(360deg); } }
 

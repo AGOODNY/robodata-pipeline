@@ -118,6 +118,17 @@ export interface RawFrameList {
   frames: RawFrame[]
 }
 
+export interface Hdf5Camera {
+  key: string
+  frame_count: number
+  height: number
+  width: number
+}
+
+export interface Hdf5CameraList {
+  cameras: Hdf5Camera[]
+}
+
 export interface RawSeriesLine {
   key: string
   label: string
@@ -178,7 +189,7 @@ export interface ConversionJob {
   source_name: string
   source_format: DatasetFormat
   target_format: Exclude<DatasetFormat, 'raw'>
-  status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
+  status: 'queued' | 'running' | 'cancelling' | 'completed' | 'failed' | 'cancelled'
   stage: string
   completed_episodes: number
   total_episodes: number
