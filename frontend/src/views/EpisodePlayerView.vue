@@ -7,6 +7,7 @@ import { api } from '../api/client'
 import type { EpisodeDetail, EpisodeSeries, VideoAsset } from '../api/types'
 import MetricCard from '../components/MetricCard.vue'
 import PageState from '../components/PageState.vue'
+import PlaybackControls from '../components/PlaybackControls.vue'
 
 const route = useRoute()
 const dataset = computed(() => route.params.dataset as string)
@@ -19,6 +20,7 @@ const error = ref('')
 const selectedVideo = ref<VideoAsset | null>(null)
 const currentTime = ref(0)
 const videoPlaying = ref(false)
+const playbackRate = ref(1)
 const videoDuration = ref(0)
 const videoEl = ref<HTMLVideoElement | null>(null)
 const chartEl = ref<HTMLDivElement | null>(null)
@@ -168,6 +170,7 @@ function handleVideoPause(event: Event) {
 
 function handleLoadedMetadata(event: Event) {
   const video = event.currentTarget as HTMLVideoElement
+  video.playbackRate = playbackRate.value
   videoDuration.value = Number.isFinite(video.duration) ? video.duration : 0
   syncVideoTime(event)
 }
@@ -208,10 +211,6 @@ function nextFrame() {
   seekTo(currentTime.value + videoFrameStep.value)
 }
 
-function seekFromControl(event: Event) {
-  seekTo(Number((event.target as HTMLInputElement).value))
-}
-
 function resizeChart() {
   chart?.resize()
 }
@@ -223,6 +222,10 @@ watch(selectedVideo, () => {
   currentTime.value = 0
   lastMarkerTime = 0
   updateMarker()
+})
+
+watch(playbackRate, (rate) => {
+  if (videoEl.value) videoEl.value.playbackRate = rate
 })
 
 onMounted(async () => {
@@ -292,49 +295,21 @@ onUnmounted(() => {
         ></video>
         <div v-else class="page-state">Video unavailable for this camera.</div>
 
-        <div class="raw-controls">
-          <button
-            class="play-control"
-            :aria-label="videoPlaying ? 'Pause playback' : 'Play video'"
-            :title="videoPlaying ? 'Pause playback' : 'Play video'"
-            :disabled="!selectedVideo?.exists"
-            @click="togglePlayback"
-          >
-            <span v-if="videoPlaying" aria-hidden="true">&#10074;&#10074;</span>
-            <span v-else aria-hidden="true">&#9654;</span>
-            {{ videoPlaying ? 'Pause' : 'Play' }}
-          </button>
-          <button
-            class="frame-control"
-            aria-label="Previous frame"
-            title="Previous frame"
-            :disabled="!selectedVideo?.exists || currentTime <= 0"
-            @click="previousFrame"
-          >
-            <span aria-hidden="true">&#9664;</span>
-            Prev
-          </button>
-          <button
-            class="frame-control"
-            aria-label="Next frame"
-            title="Next frame"
-            :disabled="!selectedVideo?.exists || currentTime >= totalSeconds"
-            @click="nextFrame"
-          >
-            Next
-            <span aria-hidden="true">&#9654;</span>
-          </button>
-          <input
-            type="range"
-            min="0"
-            :max="totalSeconds"
-            :step="videoFrameStep"
-            :value="currentTime"
-            :disabled="!selectedVideo?.exists"
-            @input="seekFromControl"
-          />
-          <span>{{ seconds(currentTime) }}</span>
-        </div>
+        <PlaybackControls
+          v-model:playback-rate="playbackRate"
+          :playing="videoPlaying"
+          :disabled="!selectedVideo?.exists"
+          :at-start="currentTime <= 0"
+          :at-end="currentTime >= totalSeconds"
+          :position="currentTime"
+          :max="totalSeconds"
+          :step="videoFrameStep"
+          :time-label="seconds(currentTime)"
+          @toggle="togglePlayback"
+          @previous="previousFrame"
+          @next="nextFrame"
+          @seek="seekTo"
+        />
       </section>
 
       <section class="panel chart-panel">

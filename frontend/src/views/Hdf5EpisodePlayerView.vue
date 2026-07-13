@@ -7,6 +7,8 @@ import { api } from '../api/client'
 import type { EpisodeDetail, EpisodeSeries, RawFrame } from '../api/types'
 import MetricCard from '../components/MetricCard.vue'
 import PageState from '../components/PageState.vue'
+import PlaybackControls from '../components/PlaybackControls.vue'
+import { useFramePlayback } from '../composables/useFramePlayback'
 
 const route = useRoute()
 const dataset = computed(() => route.params.dataset as string)
@@ -17,10 +19,10 @@ const frames = ref<RawFrame[]>([])
 const camera = ref('pikaGripperDepthCamera')
 const frameIndex = ref(0)
 const playing = ref(false)
+const playbackRate = ref(1)
 const error = ref(''); const loading = ref(true)
 const chartEl = ref<HTMLDivElement | null>(null)
 let chart: echarts.ECharts | null = null
-let timer = 0
 const PROGRESS_MARKER_SERIES_ID = 'hdf5-progress-marker'
 const current = computed(() => frames.value[frameIndex.value] ?? null)
 const seconds = computed(() => current.value && frames.value[0] ? current.value.timestamp - frames.value[0].timestamp : 0)
@@ -31,6 +33,14 @@ const frameStep = computed(() => {
     if (step > 0) return step
   }
   return 1 / 30
+})
+
+const { frameRendered } = useFramePlayback({
+  playing,
+  playbackRate,
+  frameIndex,
+  frameCount: () => frames.value.length,
+  frameDurationMs: () => frameStep.value * 1000,
 })
 
 async function loadFrames() {
@@ -54,33 +64,6 @@ function advanceFrame() {
 function nextFrame() {
   playing.value = false
   advanceFrame()
-}
-
-function stopTimer() {
-  window.clearTimeout(timer)
-  timer = 0
-}
-
-function scheduleNextFrame() {
-  stopTimer()
-  if (!playing.value || !frames.value.length) return
-  timer = window.setTimeout(() => {
-    timer = 0
-    if (frameIndex.value >= frames.value.length - 1) {
-      playing.value = false
-      return
-    }
-    advanceFrame()
-  }, Math.max(24, frameStep.value * 1000))
-}
-
-function startPlayback() {
-  if (frameIndex.value >= frames.value.length - 1) frameIndex.value = 0
-  scheduleNextFrame()
-}
-
-function handleFrameLoaded() {
-  if (playing.value) scheduleNextFrame()
 }
 
 function progressMarkLine() {
@@ -125,9 +108,7 @@ function resizeChart() { chart?.resize() }
 watch(playing, (value) => {
   if (value) {
     hideCurrentFrameTooltip()
-    startPlayback()
   } else {
-    stopTimer()
     updateMarker()
   }
 })
@@ -139,13 +120,13 @@ watch(camera, async () => {
   catch (err) { error.value = err instanceof Error ? err.message : String(err) }
 })
 onMounted(async () => { try { episode.value = await api.episode(dataset.value, episodeIndex.value); series.value = await api.series(dataset.value, episodeIndex.value); await loadFrames(); await nextTick(); renderChart(); updateMarker(); window.addEventListener('resize', resizeChart) } catch (err) { error.value = err instanceof Error ? err.message : String(err) } finally { loading.value = false } })
-onUnmounted(() => { stopTimer(); window.removeEventListener('resize', resizeChart); chart?.dispose() })
+onUnmounted(() => { window.removeEventListener('resize', resizeChart); chart?.dispose() })
 </script>
 
 <template>
   <section class="page"><header class="page-header"><div><p class="eyebrow">HDF5 Player</p><h1>{{ dataset }} / #{{ episodeIndex }}</h1></div><RouterLink class="button" :to="`/datasets/hdf5/${dataset}/episodes`">Episodes</RouterLink></header><PageState :loading="loading" :error="error" />
   <template v-if="episode"><div class="metric-row"><MetricCard label="Format" value="HDF5" /><MetricCard label="Frame" :value="frames.length ? `${frameIndex + 1} / ${frames.length}` : 'N/A'" /><MetricCard label="Seconds" :value="`${seconds.toFixed(2)}s / ${totalSeconds.toFixed(2)}s`" /><MetricCard label="Task" :value="episode.tasks.join(', ')" /></div>
-      <section class="panel raw-player-panel"><div class="video-tabs"><button :class="{ active: camera === 'pikaGripperDepthCamera' }" @click="camera = 'pikaGripperDepthCamera'">Gripper camera</button><button :class="{ active: camera === 'orbbecCamera' }" @click="camera = 'orbbecCamera'">Orbbec camera</button></div><div class="raw-frame-stage"><img v-if="current" :src="current.url" :alt="`${camera} frame ${frameIndex + 1}`" @load="handleFrameLoaded" @error="handleFrameLoaded" /><div v-else class="page-state">No RGB frame available.</div></div><div class="raw-controls"><button class="play-control" :disabled="!frames.length" :aria-label="playing ? 'Pause playback' : 'Play frames'" :title="playing ? 'Pause playback' : 'Play frames'" @click="playing = !playing"><span v-if="playing" aria-hidden="true">&#10074;&#10074;</span><span v-else aria-hidden="true">&#9654;</span>{{ playing ? 'Pause' : 'Play' }}</button><button class="frame-control" :disabled="!frames.length || frameIndex === 0" aria-label="Previous frame" title="Previous frame" @click="previousFrame"><span aria-hidden="true">&#9664;</span> Prev</button><button class="frame-control" :disabled="!frames.length || frameIndex >= frames.length - 1" aria-label="Next frame" title="Next frame" @click="nextFrame">Next <span aria-hidden="true">&#9654;</span></button><input v-model.number="frameIndex" type="range" min="0" :max="Math.max(frames.length - 1, 0)" :disabled="!frames.length" /><span>{{ seconds.toFixed(2) }}s</span></div></section>
+      <section class="panel raw-player-panel"><div class="video-tabs"><button :class="{ active: camera === 'pikaGripperDepthCamera' }" @click="camera = 'pikaGripperDepthCamera'">Gripper camera</button><button :class="{ active: camera === 'orbbecCamera' }" @click="camera = 'orbbecCamera'">Orbbec camera</button></div><div class="raw-frame-stage"><img v-if="current" :src="current.url" :alt="`${camera} frame ${frameIndex + 1}`" @load="frameRendered" @error="frameRendered" /><div v-else class="page-state">No RGB frame available.</div></div><PlaybackControls v-model:playback-rate="playbackRate" :playing="playing" :disabled="!frames.length" :at-start="frameIndex === 0" :at-end="frameIndex >= frames.length - 1" :position="frameIndex" :max="Math.max(frames.length - 1, 0)" :step="1" :time-label="`${seconds.toFixed(2)}s`" @toggle="playing = !playing" @previous="previousFrame" @next="nextFrame" @seek="playing = false; frameIndex = $event" /></section>
       <section class="panel chart-panel"><h2>State / Action Curves</h2><div v-if="series?.timestamp.length" ref="chartEl" class="chart"></div><div v-else class="page-state">No state or action series found.</div></section>
     </template></section>
 </template>

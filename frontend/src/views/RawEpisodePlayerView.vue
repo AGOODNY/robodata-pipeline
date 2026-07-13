@@ -7,6 +7,8 @@ import { api } from '../api/client'
 import type { RawEpisodeDetail, RawEpisodeSeries, RawFrame } from '../api/types'
 import MetricCard from '../components/MetricCard.vue'
 import PageState from '../components/PageState.vue'
+import PlaybackControls from '../components/PlaybackControls.vue'
+import { useFramePlayback } from '../composables/useFramePlayback'
 
 const route = useRoute()
 const dataset = computed(() => route.params.dataset as string)
@@ -17,11 +19,11 @@ const frames = ref<RawFrame[]>([])
 const selectedCamera = ref('pikaGripperDepthCamera')
 const currentIndex = ref(0)
 const playing = ref(false)
+const playbackRate = ref(1)
 const loading = ref(true)
 const error = ref('')
 const chartEl = ref<HTMLDivElement | null>(null)
 let chart: echarts.ECharts | null = null
-let timer = 0
 
 const currentFrame = computed(() => frames.value[currentIndex.value] ?? null)
 const firstTimestamp = computed(() => frames.value[0]?.timestamp ?? currentFrame.value?.timestamp ?? 0)
@@ -36,6 +38,14 @@ function selectedCameraFps() {
   const camera = episode.value?.cameras.find((item) => item.key === selectedCamera.value)
   return camera?.fps ?? 30
 }
+
+const { frameRendered } = useFramePlayback({
+  playing,
+  playbackRate,
+  frameIndex: currentIndex,
+  frameCount: () => frames.value.length,
+  frameDurationMs: () => 1000 / selectedCameraFps(),
+})
 
 async function loadFrames() {
   const response = await api.rawFrames(dataset.value, episodeName.value, selectedCamera.value)
@@ -55,23 +65,6 @@ function advanceFrame() {
 function nextFrame() {
   playing.value = false
   advanceFrame()
-}
-
-function stopTimer() {
-  window.clearInterval(timer)
-  timer = 0
-}
-
-function startTimer() {
-  stopTimer()
-  const interval = Math.max(24, 1000 / selectedCameraFps())
-  timer = window.setInterval(() => {
-    if (currentIndex.value >= frames.value.length - 1) {
-      playing.value = false
-      return
-    }
-    advanceFrame()
-  }, interval)
 }
 
 function lineData(line: { timestamps: number[]; values: Array<number | null> }) {
@@ -147,9 +140,7 @@ function resizeChart() {
 watch(playing, (value) => {
   if (value) {
     hideCurrentFrameTooltip()
-    startTimer()
   } else {
-    stopTimer()
     updateMarker()
   }
 })
@@ -186,7 +177,6 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
-  stopTimer()
   window.removeEventListener('resize', resizeChart)
   chart?.dispose()
 })
@@ -226,51 +216,25 @@ onUnmounted(() => {
         </div>
 
         <div class="raw-frame-stage">
-          <img v-if="currentFrame" :src="currentFrame.url" :alt="`${selectedCamera} frame ${currentIndex + 1}`" />
+          <img v-if="currentFrame" :src="currentFrame.url" :alt="`${selectedCamera} frame ${currentIndex + 1}`" @load="frameRendered" @error="frameRendered" />
           <div v-else class="page-state">No readable RGB frames. The stored JPG files for this camera are empty.</div>
         </div>
 
-        <div class="raw-controls">
-          <button
-            class="play-control"
-            :aria-label="playing ? 'Pause playback' : 'Play frames'"
-            :title="playing ? 'Pause playback' : 'Play frames'"
-            @click="playing = !playing"
-            :disabled="!frames.length"
-          >
-            <span v-if="playing" aria-hidden="true">&#10074;&#10074;</span>
-            <span v-else aria-hidden="true">&#9654;</span>
-            {{ playing ? 'Pause' : 'Play' }}
-          </button>
-          <button
-            class="frame-control"
-            aria-label="Previous frame"
-            title="Previous frame"
-            @click="previousFrame"
-            :disabled="!frames.length || currentIndex === 0"
-          >
-            <span aria-hidden="true">&#9664;</span>
-            Prev
-          </button>
-          <button
-            class="frame-control"
-            aria-label="Next frame"
-            title="Next frame"
-            @click="nextFrame"
-            :disabled="!frames.length || currentIndex >= frames.length - 1"
-          >
-            Next
-            <span aria-hidden="true">&#9654;</span>
-          </button>
-          <input
-            v-model.number="currentIndex"
-            type="range"
-            min="0"
-            :max="Math.max(frames.length - 1, 0)"
-            :disabled="!frames.length"
-          />
-          <span>{{ seconds(currentSeconds) }}</span>
-        </div>
+        <PlaybackControls
+          v-model:playback-rate="playbackRate"
+          :playing="playing"
+          :disabled="!frames.length"
+          :at-start="currentIndex === 0"
+          :at-end="currentIndex >= frames.length - 1"
+          :position="currentIndex"
+          :max="Math.max(frames.length - 1, 0)"
+          :step="1"
+          :time-label="seconds(currentSeconds)"
+          @toggle="playing = !playing"
+          @previous="previousFrame"
+          @next="nextFrame"
+          @seek="playing = false; currentIndex = $event"
+        />
       </section>
 
       <section class="panel chart-panel">
